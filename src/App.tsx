@@ -12,19 +12,26 @@ function App() {
 
     socket.onopen = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new AudioContext({ sampleRate: 16000 });
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-      // Use MediaRecorder to capture 16-bit PCM audio
-      const recorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-        audioBitsPerSecond: 16000 * 16, // 16 kHz × 16-bit
-      });
+      source.connect(processor);
+      processor.connect(audioContext.destination);
 
-      recorder.ondataavailable = async (event) => {
-        const arrayBuffer = await event.data.arrayBuffer();
-        socket.send(arrayBuffer);
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        
+        // Convert float32 to int16
+        const int16Data = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i]));
+          int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        
+        // Send as ArrayBuffer
+        socket.send(int16Data.buffer);
       };
-
-      recorder.start(100); // send every 100ms
     };
 
     socket.onmessage = (msg) => {
