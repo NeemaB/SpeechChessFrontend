@@ -1,73 +1,54 @@
-# React + TypeScript + Vite
+# Speech Chess
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This repo is the frontend package for the speech chess application. This simple web app allows users to play a game of chess using their voice to issue commands rather than having to move pieces manually.
 
-Currently, two official plugins are available:
+The app supports a variety of different command templates to allow for maximum flexibility.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Example commands:
 
-## React Compiler
+- bd3 -> move piece from b file to d3
+- a6 -> move a piece to a6
+- pawn takes pawn -> move pawn to square containing enemy pawn
+- knight takes -> move knight to square containing enemy piece
+- knight takes rook -> move knight to square containing enemy rook
+- bishop f8 -> move bishop to f8 square
+- g takes h5 -> move piece from g to file to h5 containing enemy piece
+- c4 to d4 -> move piece from c4 to d4 square
+- castles -> move king to valid castle position and rook to valid castle position
+- queen takes a7 -> move queen to a7 
+- short castle -> move king and rook to kingside castle positions
+- long castle -> move king and rook to queenside castle positions
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Setup
 
-## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Technical Info
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+The application uses AssemblyAI on the backend to translate voice commands to text
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Translation Process
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+After AssemblyAI transcribes the voice data to text, we convert the text to a valid board move
+with the following tokenization/parsing process. After tokenization, the text data is stored as a command:
+
+```
+interface Command: {
+  startInfo? : Piece | Square | File,
+  action? : Action,
+  endInfo? : Piece | Square | File 
+}
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+1. Break up string into individual words
+2. Check each word for piece or action using fuzzy search
+3. If neither check for 1 letter words, combine with subsequent word to make a square otherwise keep as file
+4. If two letter word like "bd, cf" etc, attempt to combine with subsequent word if exists, otherwise keep as file
+5. If only action, must be a castles action
+6. If no end info not a valid move
+7. Use start info (square, piece, file) if available to filter through available pieces on board
+8. Use end info (square, piece, file) to construct list of moves, use actions as filter (takes/take)
+9. Determine all valid moves from list of moves, if more than one valid move, or no valid moves, Produce error.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+
+
