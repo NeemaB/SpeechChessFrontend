@@ -1,5 +1,7 @@
+import { describe, test, expect } from 'vitest';
 import { Board } from '../../src/chess/board';
 import { Color, Move, PieceType, Square } from '../../src/chess/types';
+import { Action, Command } from '../../src/commands/types';
 
 // Helper to create moves quickly
 const move = (
@@ -19,7 +21,8 @@ const canMoveTo = (board: Board, from: Square, to: Square): boolean =>
 const sortSquares = (squares: Square[]): Square[] => 
   [...squares].sort();
 
-describe('Board', () => {
+describe('Board Functionality', () => {
+
   describe('Initialization', () => {
     test('default position has correct piece placement', () => {
       const board = new Board();
@@ -523,5 +526,177 @@ describe('Board', () => {
       expect(board.getAllValidMoves().length).toBeGreaterThan(0);
       expect(board.isGameOver().isOver).toBe(false);
     });
+  });
+});
+
+describe('Command Validation', () => {
+  test('valid move command recognized', () => {
+    const board = Board.fromFEN('rnbqkbnr/pp6/2ppp1pp/5p2/2PQ4/2NB3N/PP1B1PPP/R3K2R w KQkq - 0 8');
+    const command : Command = {
+      startInfo: 'c4',
+      action: Action.Move,
+      endInfo: 'c5'
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('valid move command with no startInfo recognized', () => {
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pb2Pp/Q1Np1pp1/2B5/1K6/PP1BNPp1/R3P2R w kq - 0 8');
+    const command : Command = { 
+      startInfo: undefined,
+      action: Action.Move,
+      endInfo: 'f3'
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid move command rejected', () => {
+    const board = Board.fromFEN('rnbqkbnr/pp6/2ppp1pp/5p2/2PQ4/2NB3N/PP1B1PPP/R3K2R w KQkq - 0 8');
+    const command : Command = {
+      startInfo: 'c4',
+      action: Action.Move,
+      endInfo: 'e5'
+    }
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+  
+  test('valid move command to square with enemy piece recognized', () => {  
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pb3p/Q1NpPpp1/2B5/1K6/PP1BNPp1/R3P2R w kq - 0 8');
+    const command : Command = {
+      startInfo: 'a5',
+      action: Action.Move,
+      endInfo: 'a7'
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid move command to square with friendly piece rejected', () => {
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pb3p/Q1NpPpp1/2B5/1K6/PP1BNPp1/R3P2R w kq - 0 8');
+    const command : Command = {
+      startInfo: PieceType.King,
+      action: Action.Move,
+      endInfo: 'a2'
+    }
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('valid pawn move command recognized', () => {
+    const board = Board.fromFEN('rnbqkbnr/pp6/2ppp1pp/5p2/2PQ4/2NB3N/PP1B1PPP/R3K2R w KQkq - 0 8');
+    const command : Command = {
+      startInfo: 'g',
+      action: Action.Move,
+      endInfo: 'g4'
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid pawn move command rejected', () => {
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pbp1Pp/3p1pp1/2B2Q2/1KN5/PP1BNPP1/R3P2R w kq - 0 8');
+    const command : Command = {
+      startInfo: PieceType.Pawn,
+      action: Action.Move,
+      endInfo: 'f6'
+    }
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('valid queen move command recognized', () => {   
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pbp2p/3p1pp1/2B2Q2/2N5/PP1BNPPP/R3P2R w kq - 0 8');
+    const command : Command = {
+      startInfo: PieceType.Queen,
+      action: Action.Move,
+      endInfo: 'h4'
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid queen move command rejected', () => {  
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pbp1Pp/Q2p1pp1/2B5/1KN5/PP1BNPP1/R3P2R w kq - 0 8');
+    const command : Command = { 
+      startInfo: 'a5',
+      action: Action.Move,
+      endInfo: 'c3'
+    }
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('valid king move command recognized', () => {  
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pbp1Pp/Q2p1pp1/2B5/1KN5/PP1BNPP1/R3P2R w kq - 0 8');
+    const command : Command = {
+      startInfo: PieceType.King,
+      action: Action.Move,  
+      endInfo: 'a4'
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  }); 
+
+  test('valid capture move command recognized', () => { 
+     const board = Board.fromFEN('rnbqk1nr/pp6/2pbp1Pp/Q1Np1pp1/2B5/1K6/PP1BNPP1/R3P2R w kq - 0 8');
+     const command : Command = {
+      startInfo: 'a5',
+      action: Action.Capture,
+      endInfo: 'd8'
+     }
+     expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('valid capture move command with no endInfo recognized', () => {  
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pb3p/Q1NpPpp1/2B5/1K6/PP1BNPp1/R3P2R w kq - 0 8');
+    const command : Command = {
+      startInfo: PieceType.Pawn,
+      action: Action.Capture,
+      endInfo: undefined
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid capture move command rejected', () => {  
+    const board = Board.fromFEN('rnbqk1nr/pp6/2pb2Pp/Q1Np1pp1/2B5/1K6/PP1BNPp1/R3P2R w kq - 0 8');
+    const command : Command = {
+      startInfo: PieceType.King,
+      action: Action.Capture,
+      endInfo: 'b7'
+    }
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('valid short castling command recognized', () => {
+    const board = Board.fromFEN('rnb1kb1r/pppp1ppp/4pn2/6q1/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1');
+    const command : Command = {
+      startInfo: undefined,
+      action: Action.ShortCastle,
+      endInfo: undefined
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid short castling command rejected', () => {
+    const board = Board.fromFEN('rnb1kb1r/pppp1ppp/4pn2/6q1/2B1PP2/5N2/PPPP1P1P/RNBQK2R w KQkq - 0 1');
+    const command : Command = {
+      startInfo: undefined,
+      action: Action.ShortCastle,
+      endInfo: undefined
+    } 
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('valid long castling command recognized', () => {
+    const board = Board.fromFEN('r1bqkb1r/pp1p1ppp/2n1pn2/2p5/1P4Q1/N1P1P3/PB1P1PPP/R3KBNR w KQkq - 0 1');
+    const command : Command = {
+      startInfo: undefined,
+      action: Action.LongCastle,
+      endInfo: undefined
+    }
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid long castling command rejected', () => {
+    const board = Board.fromFEN('r1bqkb1r/pp1p1ppp/2n1p3/2p5/1P4Q1/N1PnP3/PB1P1PPP/R3KBNR w KQkq - 0 1');
+    const command : Command = {
+      startInfo: undefined,
+      action: Action.LongCastle,
+      endInfo: undefined
+    }
+    expect(board.isValidCommand(command)).toBe(false);  
   });
 });

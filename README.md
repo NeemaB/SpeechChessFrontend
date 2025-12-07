@@ -6,18 +6,32 @@ The app supports a variety of different command templates to allow for maximum f
 
 Example commands:
 
-- bd3 -> move piece from b file to d3
-- a6 -> move a piece to a6
-- pawn takes pawn -> move pawn to square containing enemy pawn
-- knight takes -> move knight to square containing enemy piece
-- knight takes rook -> move knight to square containing enemy rook
-- bishop f8 -> move bishop to f8 square
-- g takes h5 -> move piece from g to file to h5 containing enemy piece
-- c4 to d4 -> move piece from c4 to d4 square
-- castles -> move king to valid castle position and rook to valid castle position
-- queen takes a7 -> move queen to a7 
-- short castle -> move king and rook to kingside castle positions
-- long castle -> move king and rook to queenside castle positions
+- "bd3" -> move piece from b file to d3
+- "a6" -> move a piece to a6
+- "pawn takes pawn" -> move pawn to square containing enemy pawn
+- "pawn takes" -> move pawn to square containing enemy piece
+- "knight takes rook" -> move knight to square containing enemy rook
+- "bishop f8" -> move bishop to f8 square
+- "g takes h5" -> move piece from g file to h5 containing enemy piece 
+- "c4 to d4" -> move piece from c4 to d4 square
+- "castles" -> move king to valid castle position and rook to valid castle position
+- "queen takes a7" -> move queen to a7 
+- "short castle" -> move king and rook to kingside castle positions
+- "long castle" -> move king and rook to queenside castle positions
+- "e2 e4" -> move piece from e2 to e4 square
+- "knight f three" -> move knight to f3 square
+- "g two to b six" -> move piece from g2 to b6 square
+- "bishop to c five" -> move bishop to c5 square
+- "ad five" -> move piece from a-file to d5 square
+- "g takes b five" -> move piece from g-file to b5 containing enemy piece
+- "b e 2" -> move piece from b-file to e2 square
+- "c four d6" -> move piece from c4 to d6 square
+- "b3 a five" -> move piece from b3 to a5 square
+- "g to h seven" -> move piece from g-file to h7 square
+- "a c four" -> move piece from a-file to c4 square
+- "a 6 takes d three" -> move piece from a6 to d3 containing enemy piece
+- "resign" -> resign game
+- "i resign" -> resign game
 
 ## Setup
 

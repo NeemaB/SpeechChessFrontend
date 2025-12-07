@@ -1,28 +1,30 @@
 // Board.ts
 
-import { 
-  Color, 
-  PieceType, 
+import {
+  Color,
+  PieceType
 } from './types';
-import type { Piece, Move, Square, CastlingRights, GameState } from './types';
+import type { File, Piece, Move, Square, CastlingRights, GameState } from './types';
 import { SquareUtils } from './square_utils';
 import { MoveGenerator } from './move_generator';
+import { type Command, type CommandInfo, Action } from '../commands/types';
+// Add to your imports at the top of the file
 
 export class Board {
   // Core board state - flat array for O(1) access
   private squares: (Piece | null)[];
-  
+
   // Game state
   private activeColor: Color;
   private castlingRights: CastlingRights;
   private enPassantSquare: Square | null;
   private halfMoveClock: number;
   private fullMoveNumber: number;
-  
+
   // Quick lookup caches for speed
   private piecePositions: Map<Color, Map<PieceType, Set<number>>>;
   private kingPositions: Map<Color, number>;
-  
+
   // Move cache for frequently accessed positions
   private validMovesCache: Map<number, Move[]>;
   private isCacheDirty: boolean;
@@ -30,10 +32,10 @@ export class Board {
   public static fromFEN(fen: string): Board {
     const board = new Board();
     board.clearBoard();
-    
+
     const parts = fen.split(' ');
     const [position, activeColor, castling, enPassant, halfMove, fullMove] = parts;
-    
+
     // Parse piece positions
     const ranks = position.split('/');
     for (let rankIdx = 7; rankIdx >= 0; rankIdx--) {
@@ -50,10 +52,10 @@ export class Board {
         }
       }
     }
-    
+
     // Parse active color
     board.activeColor = activeColor === 'w' ? Color.White : Color.Black;
-    
+
     // Parse castling rights
     board.castlingRights = {
       whiteKingside: castling.includes('K'),
@@ -61,18 +63,18 @@ export class Board {
       blackKingside: castling.includes('k'),
       blackQueenside: castling.includes('q')
     };
-    
+
     // Parse en passant square
     board.enPassantSquare = enPassant === '-' ? null : enPassant as Square;
-    
+
     // Parse move clocks
     board.halfMoveClock = parseInt(halfMove) || 0;
     board.fullMoveNumber = parseInt(fullMove) || 1;
-    
+
     board.invalidateCache();
     return board;
   }
-  
+
   private static pieceTypeToChar(type: PieceType): string {
     const map: Record<PieceType, string> = {
       [PieceType.King]: 'k',
@@ -96,7 +98,7 @@ export class Board {
     };
     return map[char];
   }
-  
+
   constructor() {
     this.squares = new Array(64).fill(null);
     this.activeColor = Color.White;
@@ -109,16 +111,16 @@ export class Board {
     this.enPassantSquare = null;
     this.halfMoveClock = 0;
     this.fullMoveNumber = 1;
-    
+
     this.piecePositions = new Map([
       [Color.White, this.createPieceTypeMap()],
       [Color.Black, this.createPieceTypeMap()]
     ]);
     this.kingPositions = new Map();
-    
+
     this.validMovesCache = new Map();
     this.isCacheDirty = true;
-    
+
     this.setupInitialPosition();
   }
 
@@ -131,34 +133,34 @@ export class Board {
     const isValid = validMoves.some(
       m => m.startSquare === move.startSquare && m.endSquare === move.endSquare
     );
-    
+
     if (!isValid) {
       return false;
     }
-    
+
     const piece = this.getPieceAt(move.startSquare);
     if (!piece || piece.type !== move.piece || piece.color !== move.color) {
       return false;
     }
-    
+
     // Handle special moves
     const fromIndex = SquareUtils.toIndex(move.startSquare);
     const toIndex = SquareUtils.toIndex(move.endSquare);
-    
+
     // Check for capture (for half move clock)
     const capturedPiece = this.squares[toIndex];
     const isPawnMove = piece.type === PieceType.Pawn;
-    
+
     // Handle en passant capture
     if (isPawnMove && move.endSquare === this.enPassantSquare) {
-      const capturedPawnRank = piece.color === Color.White ? 
-        SquareUtils.getRank(move.endSquare) - 1 : 
+      const capturedPawnRank = piece.color === Color.White ?
+        SquareUtils.getRank(move.endSquare) - 1 :
         SquareUtils.getRank(move.endSquare) + 1;
       const capturedPawnFile = SquareUtils.getFile(move.endSquare);
       const capturedPawnIndex = SquareUtils.fileRankToIndex(capturedPawnFile, capturedPawnRank);
       this.removePiece(SquareUtils.fromIndex(capturedPawnIndex));
     }
-    
+
     // Handle castling
     if (piece.type === PieceType.King) {
       const fileDiff = SquareUtils.getFile(move.endSquare) - SquareUtils.getFile(move.startSquare);
@@ -177,22 +179,22 @@ export class Board {
         }
       }
     }
-    
+
     // Execute the main move
     this.removePiece(move.startSquare);
     if (capturedPiece) {
       this.removePiece(move.endSquare);
     }
     this.placePiece(move.endSquare, piece);
-    
+
     // Update en passant square
     if (isPawnMove) {
       const rankDiff = Math.abs(
         SquareUtils.getRank(move.endSquare) - SquareUtils.getRank(move.startSquare)
       );
       if (rankDiff === 2) {
-        const epRank = piece.color === Color.White ? 
-          SquareUtils.getRank(move.startSquare) + 1 : 
+        const epRank = piece.color === Color.White ?
+          SquareUtils.getRank(move.startSquare) + 1 :
           SquareUtils.getRank(move.startSquare) - 1;
         const epFile = SquareUtils.getFile(move.startSquare);
         this.enPassantSquare = SquareUtils.fromIndex(
@@ -204,38 +206,310 @@ export class Board {
     } else {
       this.enPassantSquare = null;
     }
-    
+
     // Update castling rights
     this.updateCastlingRights(move);
-    
+
     // Update clocks
     if (isPawnMove || capturedPiece) {
       this.halfMoveClock = 0;
     } else {
       this.halfMoveClock++;
     }
-    
+
     if (this.activeColor === Color.Black) {
       this.fullMoveNumber++;
     }
-    
+
     // Switch active color
     this.activeColor = this.activeColor === Color.White ? Color.Black : Color.White;
-    
+
     this.invalidateCache();
     return true;
   }
 
+  /**
+ * Validates whether a voice command can be legally executed on the current board state.
+ * A command is valid only if exactly one legal move can be constructed from the provided info.
+ * 
+ * @param command - Parsed voice command containing action type and optional piece/square info
+ * @returns true if the command represents exactly one legal move that can be executed
+ */
+  public isValidCommand(command: Command): boolean {
+    if (!command.action) return false;
+    if (command.action === Action.Resign) return true;
+    if (command.action === Action.ShortCastle) return this.canCastleKingside();
+    if (command.action === Action.LongCastle) return this.canCastleQueenside();
+
+    // Handle Move and Capture actions
+    if (command.action === Action.Move || command.action === Action.Capture) {
+      const validMoves = this.findValidMovesForCommand(command);
+      return validMoves.length === 1; // Must be exactly one unambiguous move
+    }
+
+    return false; // Promote not yet implemented
+  }
+
+  /**
+ * Find all valid moves that match the command's criteria.
+ * Returns array of moves matching startInfo, action type, and endInfo constraints.
+ */
+  private findValidMovesForCommand(command: Command): Move[] {
+    // Get candidate start squares based on startInfo
+    const candidateStarts = this.getCandidateStartSquares(command.startInfo);
+    if (candidateStarts.length === 0) return [];
+
+    // Get candidate end squares based on endInfo
+    const candidateEnds = this.getCandidateEndSquares(command.endInfo);
+    if (candidateEnds.length === 0) return [];
+
+    const validMoves: Move[] = [];
+    const isCapture = command.action === Action.Capture;
+
+    // Check each start/end combination for supported pieces (King, Queen, Pawn)
+    for (const startSquare of candidateStarts) {
+      const piece = this.getPieceAt(startSquare);
+      if (!piece || piece.color !== this.activeColor) continue;
+
+      // Only validate King, Queen, Pawn for now
+      if (!this.isSupportedPieceType(piece.type)) continue;
+
+      for (const endSquare of candidateEnds) {
+        // Skip if start and end are the same
+        if (startSquare === endSquare) continue;
+
+        // Check if move satisfies capture requirement
+        if (!this.matchesActionType(startSquare, endSquare, isCapture)) continue;
+
+        // Validate the move is legal for this piece type
+        if (!this.canPieceMoveTo(piece, startSquare, endSquare)) continue;
+
+        // Construct and validate move doesn't leave king in check
+        const move: Move = {
+          piece: piece.type,
+          color: piece.color,
+          startSquare,
+          endSquare
+        };
+
+        if (this.isMoveLegal(move)) {
+          validMoves.push(move);
+        }
+      }
+    }
+
+    return validMoves;
+  }
+
+  /**
+   * Get candidate end squares based on endInfo.
+   * Returns all squares if no endInfo provided.
+   */
+  private getCandidateEndSquares(endInfo?: CommandInfo): Square[] {
+    if (!endInfo) {
+      // No endInfo - all squares are candidates
+      return this.getAllSquares();
+    }
+
+    // If endInfo is a specific square
+    if (this.isSquare(endInfo)) {
+      return [endInfo];
+    }
+
+    // If endInfo is a file, return all squares on that file
+    if (this.isFile(endInfo)) {
+      return this.getAllSquaresOnFile(endInfo);
+    }
+
+    // If endInfo is a piece type, return squares occupied by opponent pieces of that type
+    if (this.isPieceType(endInfo)) {
+      const opponentColor = this.activeColor === Color.White ? Color.Black : Color.White;
+      return this.findPieces(endInfo, opponentColor);
+    }
+
+    return [];
+  }
+
+  /**
+   * Check if a move matches the action type (Move vs Capture).
+   * Move: end square is empty or contains opponent piece.
+   * Capture: end square must contain opponent piece.
+   */
+  private matchesActionType(startSquare: Square, endSquare: Square, isCapture: boolean): boolean {
+    const targetPiece = this.getPieceAt(endSquare);
+    const movingPiece = this.getPieceAt(startSquare);
+
+    if (!movingPiece) return false;
+
+    const hasOpponentPiece = targetPiece !== null && targetPiece.color !== movingPiece.color;
+
+    if (isCapture) {
+      // Capture requires opponent piece (or en passant for pawns)
+      if (hasOpponentPiece) return true;
+      // Check en passant
+      if (movingPiece.type === PieceType.Pawn && endSquare === this.enPassantSquare) {
+        return true;
+      }
+      return false;
+    } else {
+      // Move action allows empty square or opponent piece
+      return targetPiece === null || hasOpponentPiece;
+    }
+  }
+
+  /**
+   * Validate if a piece can legally move to the target square based on movement rules.
+   * Only validates King, Queen, and Pawn movements.
+   */
+  private canPieceMoveTo(piece: Piece, from: Square, to: Square): boolean {
+    switch (piece.type) {
+      case PieceType.King:
+        return this.canKingMoveTo(from, to);
+      case PieceType.Queen:
+        return this.canQueenMoveTo(from, to);
+      case PieceType.Pawn:
+        return this.canPawnMoveTo(piece.color, from, to);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Check if king can move from start to end (one square in any direction).
+   * Does not include castling - that's handled separately.
+   */
+  private canKingMoveTo(from: Square, to: Square): boolean {
+    const fromFile = SquareUtils.getFile(from);
+    const fromRank = SquareUtils.getRank(from);
+    const toFile = SquareUtils.getFile(to);
+    const toRank = SquareUtils.getRank(to);
+
+    const fileDiff = Math.abs(toFile - fromFile);
+    const rankDiff = Math.abs(toRank - fromRank);
+
+    // King moves one square in any direction
+    return fileDiff <= 1 && rankDiff <= 1;
+  }
+
+  /**
+   * Check if queen can move from start to end (any number of squares in straight or diagonal line).
+   * Validates path is clear of obstructions.
+   */
+  private canQueenMoveTo(from: Square, to: Square): boolean {
+    const fromFile = SquareUtils.getFile(from);
+    const fromRank = SquareUtils.getRank(from);
+    const toFile = SquareUtils.getFile(to);
+    const toRank = SquareUtils.getRank(to);
+
+    const fileDiff = toFile - fromFile;
+    const rankDiff = toRank - fromRank;
+
+    // Must move in straight line (rook-like) or diagonal (bishop-like)
+    const isStraight = fileDiff === 0 || rankDiff === 0;
+    const isDiagonal = Math.abs(fileDiff) === Math.abs(rankDiff);
+
+    if (!isStraight && !isDiagonal) return false;
+
+    // Check path is clear
+    return this.isPathClear(fromFile, fromRank, toFile, toRank);
+  }
+
+  /**
+   * Check if pawn can move from start to end following pawn movement rules.
+   * Includes forward moves, captures, double push, and en passant.
+   */
+  private canPawnMoveTo(color: Color, from: Square, to: Square): boolean {
+    const fromFile = SquareUtils.getFile(from);
+    const fromRank = SquareUtils.getRank(from);
+    const toFile = SquareUtils.getFile(to);
+    const toRank = SquareUtils.getRank(to);
+
+    const direction = color === Color.White ? 1 : -1;
+    const startRank = color === Color.White ? 1 : 6;
+
+    const fileDiff = toFile - fromFile;
+    const rankDiff = toRank - fromRank;
+
+    // Forward move (one square)
+    if (fileDiff === 0 && rankDiff === direction) {
+      return this.getPieceAt(to) === null;
+    }
+
+    // Forward move (two squares from start)
+    if (fileDiff === 0 && rankDiff === 2 * direction && fromRank === startRank) {
+      const middleRank = fromRank + direction;
+      const middleSquare = SquareUtils.fromIndex(SquareUtils.fileRankToIndex(fromFile, middleRank));
+      return this.getPieceAt(middleSquare) === null && this.getPieceAt(to) === null;
+    }
+
+    // Diagonal capture
+    if (Math.abs(fileDiff) === 1 && rankDiff === direction) {
+      const targetPiece = this.getPieceAt(to);
+      // Regular capture or en passant
+      return (targetPiece !== null && targetPiece.color !== color) || to === this.enPassantSquare;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if the path between two squares is clear (for sliding pieces).
+   * Assumes the move is along a valid straight or diagonal line.
+   */
+  private isPathClear(fromFile: number, fromRank: number, toFile: number, toRank: number): boolean {
+    const fileStep = toFile === fromFile ? 0 : (toFile > fromFile ? 1 : -1);
+    const rankStep = toRank === fromRank ? 0 : (toRank > fromRank ? 1 : -1);
+
+    let file = fromFile + fileStep;
+    let rank = fromRank + rankStep;
+
+    // Check each square along the path (excluding start and end)
+    while (file !== toFile || rank !== toRank) {
+      const index = SquareUtils.fileRankToIndex(file, rank);
+      if (this.squares[index] !== null) return false;
+
+      file += fileStep;
+      rank += rankStep;
+    }
+
+    return true;
+  }
+
+  /** Check if piece type is currently supported for validation */
+  private isSupportedPieceType(type: PieceType): boolean {
+    return type === PieceType.King || type === PieceType.Queen || type === PieceType.Pawn;
+  }
+
+  /** Get all 64 squares on the board */
+  private getAllSquares(): Square[] {
+    const squares: Square[] = [];
+    for (let i = 0; i < 64; i++) {
+      squares.push(SquareUtils.fromIndex(i));
+    }
+    return squares;
+  }
+
+  /** Get all squares on a specific file (8 squares) */
+  private getAllSquaresOnFile(file: File): Square[] {
+    const squares: Square[] = [];
+    const fileIndex = file.charCodeAt(0) - 'a'.charCodeAt(0);
+
+    for (let rank = 0; rank < 8; rank++) {
+      squares.push(SquareUtils.fromIndex(SquareUtils.fileRankToIndex(fileIndex, rank)));
+    }
+
+    return squares;
+  }
   // Public API
-  
+
   public getPieceAt(square: Square): Piece | null {
     return this.squares[SquareUtils.toIndex(square)];
   }
-  
+
   public getActiveColor(): Color {
     return this.activeColor;
   }
-  
+
   public getGameState(): GameState {
     return {
       activeColor: this.activeColor,
@@ -252,54 +526,54 @@ export class Board {
    */
   public getValidMovesForSquare(square: Square): Move[] {
     const index = SquareUtils.toIndex(square);
-    
+
     if (!this.isCacheDirty && this.validMovesCache.has(index)) {
       return this.validMovesCache.get(index)!;
     }
-    
+
     const piece = this.squares[index];
     if (!piece) {
       return [];
     }
-    
+
     const pseudoLegalMoves = MoveGenerator.generateMoves(
       piece,
       square,
       this.squares,
       this.enPassantSquare
     );
-    
+
     // Filter out moves that would leave king in check
-    const legalMoves = pseudoLegalMoves.filter(move => 
+    const legalMoves = pseudoLegalMoves.filter(move =>
       this.isMoveLegal(move)
     );
-    
+
     // Add castling moves if applicable
     if (piece.type === PieceType.King) {
       legalMoves.push(...this.getCastlingMoves(piece.color));
     }
-    
+
     this.validMovesCache.set(index, legalMoves);
     return legalMoves;
   }
-  
+
   /**
    * Get all valid moves for the active player
    */
   public getAllValidMoves(): Move[] {
     const moves: Move[] = [];
     const colorPieces = this.piecePositions.get(this.activeColor)!;
-    
+
     for (const [, positions] of colorPieces) {
       for (const index of positions) {
         const square = SquareUtils.fromIndex(index);
         moves.push(...this.getValidMovesForSquare(square));
       }
     }
-    
+
     return moves;
   }
-  
+
   /**
    * Find all pieces of a given type and color
    */
@@ -314,13 +588,13 @@ export class Board {
   public isSquareAttacked(squareIndex: number, byColor: Color): boolean {
     const file = squareIndex % 8;
     const rank = Math.floor(squareIndex / 8);
-    
+
     // Check knight attacks
     const knightOffsets: [number, number][] = [
       [-2, -1], [-2, 1], [-1, -2], [-1, 2],
       [1, -2], [1, 2], [2, -1], [2, 1]
     ];
-    
+
     for (const [rankOff, fileOff] of knightOffsets) {
       const newFile = file + fileOff;
       const newRank = rank + rankOff;
@@ -331,14 +605,14 @@ export class Board {
         }
       }
     }
-    
+
     // Check king attacks
     const kingOffsets: [number, number][] = [
       [-1, -1], [-1, 0], [-1, 1],
       [0, -1], [0, 1],
       [1, -1], [1, 0], [1, 1]
     ];
-    
+
     for (const [rankOff, fileOff] of kingOffsets) {
       const newFile = file + fileOff;
       const newRank = rank + rankOff;
@@ -349,7 +623,7 @@ export class Board {
         }
       }
     }
-    
+
     // Check pawn attacks
     const pawnRankDir = byColor === Color.White ? -1 : 1;
     for (const fileOff of [-1, 1]) {
@@ -362,25 +636,25 @@ export class Board {
         }
       }
     }
-    
+
     // Check sliding pieces (rook, bishop, queen)
     const rookDirs: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     const bishopDirs: [number, number][] = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
-    
+
     for (const [rankDir, fileDir] of rookDirs) {
-      if (this.checkSlidingAttack(file, rank, fileDir, rankDir, byColor, 
-          [PieceType.Rook, PieceType.Queen])) {
+      if (this.checkSlidingAttack(file, rank, fileDir, rankDir, byColor,
+        [PieceType.Rook, PieceType.Queen])) {
         return true;
       }
     }
-    
+
     for (const [rankDir, fileDir] of bishopDirs) {
-      if (this.checkSlidingAttack(file, rank, fileDir, rankDir, byColor, 
-          [PieceType.Bishop, PieceType.Queen])) {
+      if (this.checkSlidingAttack(file, rank, fileDir, rankDir, byColor,
+        [PieceType.Bishop, PieceType.Queen])) {
         return true;
       }
     }
-    
+
     return false;
   }
 
@@ -392,28 +666,28 @@ export class Board {
     const opponentColor = this.activeColor === Color.White ? Color.Black : Color.White;
     return this.isSquareAttacked(kingIndex, opponentColor);
   }
-  
+
   /**
    * Check for checkmate or stalemate
    */
   public isGameOver(): { isOver: boolean; reason?: 'checkmate' | 'stalemate' | 'draw' } {
     const validMoves = this.getAllValidMoves();
-    
+
     if (validMoves.length === 0) {
       if (this.isInCheck()) {
         return { isOver: true, reason: 'checkmate' };
       }
       return { isOver: true, reason: 'stalemate' };
     }
-    
+
     // 50-move rule
     if (this.halfMoveClock >= 100) {
       return { isOver: true, reason: 'draw' };
     }
-    
+
     return { isOver: false };
   }
-  
+
   /**
    * Create a deep copy of the board
    */
@@ -425,13 +699,13 @@ export class Board {
     newBoard.enPassantSquare = this.enPassantSquare;
     newBoard.halfMoveClock = this.halfMoveClock;
     newBoard.fullMoveNumber = this.fullMoveNumber;
-    
+
     // Rebuild piece position caches
     newBoard.piecePositions = new Map([
       [Color.White, newBoard.createPieceTypeMap()],
       [Color.Black, newBoard.createPieceTypeMap()]
     ]);
-    
+
     for (let i = 0; i < 64; i++) {
       const piece = newBoard.squares[i];
       if (piece) {
@@ -441,7 +715,7 @@ export class Board {
         }
       }
     }
-    
+
     return newBoard;
   }
 
@@ -451,13 +725,13 @@ export class Board {
   public getTargetSquares(square: Square): Square[] {
     return this.getValidMovesForSquare(square).map(m => m.endSquare);
   }
-  
+
   /**
    * Convert board to FEN string (for debugging/testing)
    */
   public toFEN(): string {
     let fen = '';
-    
+
     for (let rank = 7; rank >= 0; rank--) {
       let emptyCount = 0;
       for (let file = 0; file < 8; file++) {
@@ -476,23 +750,23 @@ export class Board {
       if (emptyCount > 0) fen += emptyCount;
       if (rank > 0) fen += '/';
     }
-    
+
     fen += ` ${this.activeColor === Color.White ? 'w' : 'b'}`;
-    
+
     let castling = '';
     if (this.castlingRights.whiteKingside) castling += 'K';
     if (this.castlingRights.whiteQueenside) castling += 'Q';
     if (this.castlingRights.blackKingside) castling += 'k';
     if (this.castlingRights.blackQueenside) castling += 'q';
     fen += ` ${castling || '-'}`;
-    
+
     fen += ` ${this.enPassantSquare || '-'}`;
     fen += ` ${this.halfMoveClock}`;
     fen += ` ${this.fullMoveNumber}`;
-    
+
     return fen;
   }
-  
+
   private createPieceTypeMap(): Map<PieceType, Set<number>> {
     return new Map([
       [PieceType.King, new Set()],
@@ -503,7 +777,7 @@ export class Board {
       [PieceType.Pawn, new Set()]
     ]);
   }
-  
+
   private setupInitialPosition(): void {
     // White pieces
     this.placePiece('a1', { type: PieceType.Rook, color: Color.White });
@@ -514,11 +788,11 @@ export class Board {
     this.placePiece('f1', { type: PieceType.Bishop, color: Color.White });
     this.placePiece('g1', { type: PieceType.Knight, color: Color.White });
     this.placePiece('h1', { type: PieceType.Rook, color: Color.White });
-    
+
     for (const file of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
       this.placePiece(`${file}2` as Square, { type: PieceType.Pawn, color: Color.White });
     }
-    
+
     // Black pieces
     this.placePiece('a8', { type: PieceType.Rook, color: Color.Black });
     this.placePiece('b8', { type: PieceType.Knight, color: Color.Black });
@@ -528,49 +802,106 @@ export class Board {
     this.placePiece('f8', { type: PieceType.Bishop, color: Color.Black });
     this.placePiece('g8', { type: PieceType.Knight, color: Color.Black });
     this.placePiece('h8', { type: PieceType.Rook, color: Color.Black });
-    
+
     for (const file of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
       this.placePiece(`${file}7` as Square, { type: PieceType.Pawn, color: Color.Black });
     }
   }
-  
+
   private placePiece(square: Square, piece: Piece): void {
     const index = SquareUtils.toIndex(square);
     this.squares[index] = piece;
     this.piecePositions.get(piece.color)!.get(piece.type)!.add(index);
-    
+
     if (piece.type === PieceType.King) {
       this.kingPositions.set(piece.color, index);
     }
-    
+
     this.invalidateCache();
   }
-  
+
   private removePiece(square: Square): Piece | null {
     const index = SquareUtils.toIndex(square);
     const piece = this.squares[index];
-    
+
     if (piece) {
       this.squares[index] = null;
       this.piecePositions.get(piece.color)!.get(piece.type)!.delete(index);
       this.invalidateCache();
     }
-    
+
     return piece;
   }
-  
+
   private invalidateCache(): void {
     this.isCacheDirty = true;
     this.validMovesCache.clear();
   }
-  
+
   private movePieceInternal(from: Square, to: Square): void {
     const piece = this.removePiece(from);
     if (piece) {
       this.placePiece(to, piece);
     }
   }
-  
+
+  /** Validates castling kingside by checking if the target square exists in legal castling moves */
+  private canCastleKingside(): boolean {
+    const rank = this.activeColor === Color.White ? 0 : 7;
+    const opponentColor = this.activeColor === Color.White ? Color.Black : Color.White;
+    const kingIndex = SquareUtils.fileRankToIndex(4, rank);
+    // King must not be in check
+    if (this.isSquareAttacked(kingIndex, opponentColor)) {
+      return false;
+    }
+    // Check kingside rights
+    const canKingside = this.activeColor === Color.White ?
+      this.castlingRights.whiteKingside :
+      this.castlingRights.blackKingside;
+
+    if (!canKingside)
+      return false;
+
+    const f = SquareUtils.fileRankToIndex(5, rank);
+    const g = SquareUtils.fileRankToIndex(6, rank);
+
+    if (!this.squares[f] && !this.squares[g] &&
+      !this.isSquareAttacked(f, opponentColor) &&
+      !this.isSquareAttacked(g, opponentColor)) {
+      return true;
+    }
+    return false;
+  }
+
+  /** Validates castling queenside by checking if the target square exists in legal castling moves */
+  private canCastleQueenside(): boolean {
+    const rank = this.activeColor === Color.White ? 0 : 7;
+    const opponentColor = this.activeColor === Color.White ? Color.Black : Color.White;
+    const kingIndex = SquareUtils.fileRankToIndex(4, rank);
+    // King must not be in check
+    if (this.isSquareAttacked(kingIndex, opponentColor)) {
+      return false;
+    }
+    // Check queenside rights
+    const canQueenside = this.activeColor === Color.White ?
+      this.castlingRights.whiteQueenside :
+      this.castlingRights.blackQueenside;
+
+    if (!canQueenside)
+      return false;
+
+    const b = SquareUtils.fileRankToIndex(1, rank);
+    const c = SquareUtils.fileRankToIndex(2, rank);
+    const d = SquareUtils.fileRankToIndex(3, rank);
+
+    if (!this.squares[b] && !this.squares[c] && !this.squares[d] &&
+      !this.isSquareAttacked(c, opponentColor) &&
+      !this.isSquareAttacked(d, opponentColor)) {
+      return true;
+    }
+    return false;
+  }
+
   private updateCastlingRights(move: Move): void {
     // King moves remove both castling rights
     if (move.piece === PieceType.King) {
@@ -582,7 +913,7 @@ export class Board {
         this.castlingRights.blackQueenside = false;
       }
     }
-    
+
     // Rook moves or captures affect castling rights
     if (move.startSquare === 'a1' || move.endSquare === 'a1') {
       this.castlingRights.whiteQueenside = false;
@@ -597,7 +928,92 @@ export class Board {
       this.castlingRights.blackKingside = false;
     }
   }
-  
+
+  /**
+ * Get candidate starting squares for a command based on startInfo.
+ * Returns all active player's piece squares if no startInfo provided.
+ * 
+ * @param startInfo - Optional piece type, file, or specific square
+ * @returns Array of squares that match the startInfo criteria
+ */
+  private getCandidateStartSquares(startInfo?: CommandInfo): Square[] {
+    // No startInfo - all active player pieces are candidates
+    if (!startInfo) {
+      return this.getAllSquaresForColor(this.activeColor);
+    }
+
+    // Check if startInfo is a specific square (e.g., "e2")
+    if (this.isSquare(startInfo)) {
+      const piece = this.getPieceAt(startInfo);
+      // Only valid if square contains active player's piece
+      return piece?.color === this.activeColor ? [startInfo] : [];
+    }
+
+    // Check if startInfo is a file (e.g., "b")
+    if (this.isFile(startInfo)) {
+      return this.getSquaresOnFile(startInfo, this.activeColor);
+    }
+
+    // Check if startInfo is a piece type (e.g., PieceType.Knight)
+    if (this.isPieceType(startInfo)) {
+      // Only consider if piece color matches active player
+      return this.findPieces(startInfo, this.activeColor);
+    }
+
+    return [];
+  }
+
+  /**
+   * Get all squares containing pieces of the specified color.
+   * Uses cached piece positions for O(1) lookup per piece type.
+   */
+  private getAllSquaresForColor(color: Color): Square[] {
+    const squares: Square[] = [];
+    const colorPieces = this.piecePositions.get(color)!;
+
+    for (const positions of colorPieces.values()) {
+      for (const index of positions) {
+        squares.push(SquareUtils.fromIndex(index));
+      }
+    }
+
+    return squares;
+  }
+
+  /**
+   * Get all squares on a specific file containing the specified color's pieces.
+   */
+  private getSquaresOnFile(file: File, color: Color): Square[] {
+    const squares: Square[] = [];
+    const fileIndex = file.charCodeAt(0) - 'a'.charCodeAt(0);
+
+    // Check all 8 ranks on this file
+    for (let rank = 0; rank < 8; rank++) {
+      const index = SquareUtils.fileRankToIndex(fileIndex, rank);
+      const piece = this.squares[index];
+      if (piece?.color === color) {
+        squares.push(SquareUtils.fromIndex(index));
+      }
+    }
+
+    return squares;
+  }
+
+  /** Type guard to check if CommandInfo is a Square */
+  private isSquare(info: CommandInfo): info is Square {
+    return typeof info === 'string' && info.length === 2;
+  }
+
+  /** Type guard to check if CommandInfo is a File */
+  private isFile(info: CommandInfo): info is File {
+    return typeof info === 'string' && info.length === 1;
+  }
+
+  /** Type guard to check if CommandInfo is a PieceType */
+  private isPieceType(info: CommandInfo): info is PieceType {
+    return Object.values(PieceType).includes(info as PieceType);
+  }
+
   /**
    * Check if a move is legal (doesn't leave own king in check)
    */
@@ -605,61 +1021,61 @@ export class Board {
     // Make the move temporarily
     const fromIndex = SquareUtils.toIndex(move.startSquare);
     const toIndex = SquareUtils.toIndex(move.endSquare);
-    
+
     const movingPiece = this.squares[fromIndex];
     const capturedPiece = this.squares[toIndex];
-    
+
     // Temporarily execute move
     this.squares[fromIndex] = null;
     this.squares[toIndex] = movingPiece;
-    
+
     // Handle en passant capture for check detection
     let enPassantCaptured: Piece | null = null;
     let enPassantIndex = -1;
-    if (movingPiece?.type === PieceType.Pawn && 
-        move.endSquare === this.enPassantSquare) {
-      const capturedPawnRank = movingPiece.color === Color.White ? 
-        SquareUtils.getRank(move.endSquare) - 1 : 
+    if (movingPiece?.type === PieceType.Pawn &&
+      move.endSquare === this.enPassantSquare) {
+      const capturedPawnRank = movingPiece.color === Color.White ?
+        SquareUtils.getRank(move.endSquare) - 1 :
         SquareUtils.getRank(move.endSquare) + 1;
       enPassantIndex = SquareUtils.fileRankToIndex(
-        SquareUtils.getFile(move.endSquare), 
+        SquareUtils.getFile(move.endSquare),
         capturedPawnRank
       );
       enPassantCaptured = this.squares[enPassantIndex];
       this.squares[enPassantIndex] = null;
     }
-    
+
     // Update king position if king moved
-    const kingPos = movingPiece?.type === PieceType.King ? 
-      toIndex : 
+    const kingPos = movingPiece?.type === PieceType.King ?
+      toIndex :
       this.kingPositions.get(move.color)!;
-    
+
     // Check if king is in check
-    const isInCheck = this.isSquareAttacked(kingPos, 
+    const isInCheck = this.isSquareAttacked(kingPos,
       move.color === Color.White ? Color.Black : Color.White
     );
-    
+
     // Restore the board
     this.squares[fromIndex] = movingPiece;
     this.squares[toIndex] = capturedPiece;
     if (enPassantIndex >= 0) {
       this.squares[enPassantIndex] = enPassantCaptured;
     }
-    
+
     return !isInCheck;
   }
-  
+
   private checkSlidingAttack(
-    startFile: number, 
-    startRank: number, 
-    fileDir: number, 
+    startFile: number,
+    startRank: number,
+    fileDir: number,
     rankDir: number,
-    byColor: Color, 
+    byColor: Color,
     pieceTypes: PieceType[]
   ): boolean {
     let file = startFile + fileDir;
     let rank = startRank + rankDir;
-    
+
     while (SquareUtils.isValidFileRank(file, rank)) {
       const piece = this.squares[SquareUtils.fileRankToIndex(file, rank)];
       if (piece) {
@@ -671,10 +1087,10 @@ export class Board {
       file += fileDir;
       rank += rankDir;
     }
-    
+
     return false;
   }
-  
+
   /**
    * Get available castling moves for a color
    */
@@ -682,25 +1098,25 @@ export class Board {
     const moves: Move[] = [];
     const rank = color === Color.White ? 0 : 7;
     const kingIndex = SquareUtils.fileRankToIndex(4, rank);
-    
+
     // King must not be in check
     if (this.isSquareAttacked(kingIndex, color === Color.White ? Color.Black : Color.White)) {
       return moves;
     }
-    
+
     // Kingside castling
-    const canKingside = color === Color.White ? 
-      this.castlingRights.whiteKingside : 
+    const canKingside = color === Color.White ?
+      this.castlingRights.whiteKingside :
       this.castlingRights.blackKingside;
-    
+
     if (canKingside) {
       const f = SquareUtils.fileRankToIndex(5, rank);
       const g = SquareUtils.fileRankToIndex(6, rank);
       const opponentColor = color === Color.White ? Color.Black : Color.White;
-      
+
       if (!this.squares[f] && !this.squares[g] &&
-          !this.isSquareAttacked(f, opponentColor) &&
-          !this.isSquareAttacked(g, opponentColor)) {
+        !this.isSquareAttacked(f, opponentColor) &&
+        !this.isSquareAttacked(g, opponentColor)) {
         moves.push({
           piece: PieceType.King,
           color,
@@ -709,21 +1125,21 @@ export class Board {
         });
       }
     }
-    
+
     // Queenside castling
-    const canQueenside = color === Color.White ? 
-      this.castlingRights.whiteQueenside : 
+    const canQueenside = color === Color.White ?
+      this.castlingRights.whiteQueenside :
       this.castlingRights.blackQueenside;
-    
+
     if (canQueenside) {
       const b = SquareUtils.fileRankToIndex(1, rank);
       const c = SquareUtils.fileRankToIndex(2, rank);
       const d = SquareUtils.fileRankToIndex(3, rank);
       const opponentColor = color === Color.White ? Color.Black : Color.White;
-      
+
       if (!this.squares[b] && !this.squares[c] && !this.squares[d] &&
-          !this.isSquareAttacked(c, opponentColor) &&
-          !this.isSquareAttacked(d, opponentColor)) {
+        !this.isSquareAttacked(c, opponentColor) &&
+        !this.isSquareAttacked(d, opponentColor)) {
         moves.push({
           piece: PieceType.King,
           color,
@@ -732,10 +1148,10 @@ export class Board {
         });
       }
     }
-    
+
     return moves;
   }
-  
+
   private clearBoard(): void {
     this.squares = new Array(64).fill(null);
     this.piecePositions = new Map([
