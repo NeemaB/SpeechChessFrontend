@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { Board } from '../../src/chess/board';
-import { Color, Move, PieceType, Square } from '../../src/chess/types';
+import { Color, Move, PieceType, Square, type File } from '../../src/chess/types';
 import { Action, Command } from '../../src/commands/types';
 
 // Helper to create moves quickly
@@ -550,7 +550,7 @@ describe('Command Validation', () => {
     expect(board.isValidCommand(command)).toBe(true);
   });
 
-  test('invalid move command rejected', () => {
+  test('invalid move command for pawn move rejected', () => {
     const board = Board.fromFEN('rnbqkbnr/pp6/2ppp1pp/5p2/2PQ4/2NB3N/PP1B1PPP/R3K2R w KQkq - 0 8');
     const command : Command = {
       startInfo: 'c4',
@@ -580,7 +580,7 @@ describe('Command Validation', () => {
     expect(board.isValidCommand(command)).toBe(false);
   });
 
-  test('valid pawn move command recognized', () => {
+  test('valid pawn move command with file startInfo recognized', () => {
     const board = Board.fromFEN('rnbqkbnr/pp6/2ppp1pp/5p2/2PQ4/2NB3N/PP1B1PPP/R3K2R w KQkq - 0 8');
     const command : Command = {
       startInfo: 'g',
@@ -590,13 +590,35 @@ describe('Command Validation', () => {
     expect(board.isValidCommand(command)).toBe(true);
   });
 
-  test('invalid pawn move command rejected', () => {
+  test('move command with endInfo as file rejected when ambiguous', () => {
+    // Queen on d4 can reach multiple squares on the a-file (a4, a1, a7)
+    const board = Board.fromFEN('8/8/8/8/3Q4/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Queen,
+      action: Action.Move,
+      endInfo: 'a' as File
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('invalid move command for pawn rejected 2', () => {
     const board = Board.fromFEN('rnbqk1nr/pp6/2pbp1Pp/3p1pp1/2B2Q2/1KN5/PP1BNPP1/R3P2R w kq - 0 8');
     const command : Command = {
       startInfo: PieceType.Pawn,
       action: Action.Move,
       endInfo: 'f6'
     }
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('pinned queen cannot move off pin line', () => {
+    // White queen on b3 pinned by black bishop on a4 to white king on c2
+    const board = Board.fromFEN('4k3/8/8/8/b7/1Q6/2K5/8 w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Queen,
+      action: Action.Move,
+      endInfo: 'e6'
+    };
     expect(board.isValidCommand(command)).toBe(false);
   });
 
@@ -620,6 +642,38 @@ describe('Command Validation', () => {
     expect(board.isValidCommand(command)).toBe(false);
   });
 
+  test('move command from empty square rejected', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e4',
+      action: Action.Move,
+      endInfo: 'e5'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('pawn double push blocked by piece on intermediate square rejected', () => {
+    // Black pawn on e3 blocks white pawn's double push
+    const board = Board.fromFEN('rnbqkbnr/pppp1ppp/8/8/8/4p3/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e2',
+      action: Action.Move,
+      endInfo: 'e4'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('ambiguous move command rejected when multiple queens can reach same square', () => {
+    // Two white queens that can both reach d6
+    const board = Board.fromFEN('3Q4/8/8/8/3Q4/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Queen,
+      action: Action.Move,
+      endInfo: 'd6'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
   test('valid king move command recognized', () => {  
     const board = Board.fromFEN('rnbqk1nr/pp6/2pbp1Pp/Q2p1pp1/2B5/1KN5/PP1BNPP1/R3P2R w kq - 0 8');
     const command : Command = {
@@ -629,6 +683,28 @@ describe('Command Validation', () => {
     }
     expect(board.isValidCommand(command)).toBe(true);
   }); 
+
+  test('king move into attacked square rejected', () => {
+    // King on e1, black rook on a2 attacks e2
+    const board = Board.fromFEN('4k3/8/8/8/8/8/r7/4K3 w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.King,
+      action: Action.Move,
+      endInfo: 'e2'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('queen move blocked by piece in path rejected', () => {
+  // Queen on d1 cannot reach d4 because pawn on d2 blocks
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Queen,
+      action: Action.Move,
+      endInfo: 'd4'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
 
   test('valid capture move command recognized', () => { 
      const board = Board.fromFEN('rnbqk1nr/pp6/2pbp1Pp/Q1Np1pp1/2B5/1K6/PP1BNPP1/R3P2R w kq - 0 8');
@@ -650,7 +726,28 @@ describe('Command Validation', () => {
     expect(board.isValidCommand(command)).toBe(true);
   });
 
-  test('invalid capture move command rejected', () => {  
+  test('capture command rejected when target square is empty', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e2',
+      action: Action.Capture,
+      endInfo: 'e4'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('valid en passant capture command recognized', () => {
+    // White pawn on f5, black just played e7-e5, en passant square is e6
+    const board = Board.fromFEN('rnbqkbnr/pppp1ppp/8/4pP2/8/8/PPPPP1PP/RNBQKBNR w KQkq e6 0 3');
+    const command: Command = {
+      startInfo: 'f5',
+      action: Action.Capture,
+      endInfo: 'e6'
+    };
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  test('invalid capture command rejected as king cannot move multiple ranks', () => {  
     const board = Board.fromFEN('rnbqk1nr/pp6/2pb2Pp/Q1Np1pp1/2B5/1K6/PP1BNPp1/R3P2R w kq - 0 8');
     const command : Command = {
       startInfo: PieceType.King,
@@ -670,7 +767,7 @@ describe('Command Validation', () => {
     expect(board.isValidCommand(command)).toBe(true);
   });
 
-  test('invalid short castling command rejected', () => {
+  test('invalid short castling command rejected due to castling through check', () => {
     const board = Board.fromFEN('rnb1kb1r/pppp1ppp/4pn2/6q1/2B1PP2/5N2/PPPP1P1P/RNBQK2R w KQkq - 0 1');
     const command : Command = {
       startInfo: undefined,
@@ -698,5 +795,43 @@ describe('Command Validation', () => {
       endInfo: undefined
     }
     expect(board.isValidCommand(command)).toBe(false);  
+  });
+
+  test('move command from opponent piece square rejected', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e7',
+      action: Action.Move,
+      endInfo: 'e5'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  }); 
+
+  test('command without action rejected', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e2',
+      endInfo: 'e4'
+    };
+    expect(board.isValidCommand(command)).toBe(false);
+  });
+
+  test('resign command always valid regardless of position', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      action: Action.Resign
+    };
+    expect(board.isValidCommand(command)).toBe(true);
+  });
+
+  // Black to move tests
+  test('valid move command for black recognized', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e7',
+      action: Action.Move,
+      endInfo: 'e5'
+    };
+    expect(board.isValidCommand(command)).toBe(true);
   });
 });
