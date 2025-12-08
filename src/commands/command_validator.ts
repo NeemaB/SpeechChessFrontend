@@ -118,7 +118,7 @@ export class CommandValidator {
     }
 
     if (this.isPieceType(endInfo)) {
-      const opponentColor = this.boardState.getActiveColor() === Color.White ? 
+      const opponentColor = this.boardState.getActiveColor() === Color.White ?
         Color.Black : Color.White;
       return this.boardState.findPieces(endInfo, opponentColor);
     }
@@ -136,13 +136,13 @@ export class CommandValidator {
 
     if (!movingPiece) return false;
 
-    const hasOpponentPiece = targetPiece !== null && 
-                             targetPiece.color !== movingPiece.color;
+    const hasOpponentPiece = targetPiece !== null &&
+      targetPiece.color !== movingPiece.color;
 
     if (isCapture) {
       if (hasOpponentPiece) return true;
-      if (movingPiece.type === PieceType.Pawn && 
-          endSquare === this.boardState.getEnPassantSquare()) {
+      if (movingPiece.type === PieceType.Pawn &&
+        endSquare === this.boardState.getEnPassantSquare()) {
         return true;
       }
       return false;
@@ -163,7 +163,8 @@ export class CommandValidator {
       toIndex : this.boardState.getKingPosition(move.color);
 
     const opponentColor = move.color === Color.White ? Color.Black : Color.White;
-    return AttackDetector.isSquareAttacked(tempState.getAllSquarePieces(), kingPos, opponentColor);
+    // Return true if NOT attacked (move is legal)
+    return !AttackDetector.isSquareAttacked(tempState.getAllSquarePieces(), kingPos, opponentColor);
   }
 
   private getAllSquares(): Square[] {
@@ -215,8 +216,8 @@ class TemporaryBoardState implements BoardStateReader {
 
     // Check for en passant capture
     const movingPiece = baseState.getPieceAtIndex(this.fromIndex);
-    if (movingPiece?.type === PieceType.Pawn && 
-        move.endSquare === baseState.getEnPassantSquare()) {
+    if (movingPiece?.type === PieceType.Pawn &&
+      move.endSquare === baseState.getEnPassantSquare()) {
       const capturedPawnRank = movingPiece.color === Color.White ?
         SquareUtils.getRank(move.endSquare) - 1 :
         SquareUtils.getRank(move.endSquare) + 1;
@@ -243,7 +244,13 @@ class TemporaryBoardState implements BoardStateReader {
   }
 
   getAllSquarePieces(): (Piece | null)[] {
-      return this.baseState.getAllSquarePieces();
+    const squares = this.baseState.getAllSquarePieces().slice(); // Create a copy
+    squares[this.fromIndex] = null;
+    squares[this.toIndex] = this.baseState.getPieceAtIndex(this.fromIndex);
+    if (this.enPassantCaptureIndex !== null) {
+      squares[this.enPassantCaptureIndex] = null;
+    }
+    return squares;
   }
 
   getEnPassantSquare(): Square | null {
