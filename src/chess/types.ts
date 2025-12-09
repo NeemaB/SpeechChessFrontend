@@ -18,6 +18,11 @@ export enum Color {
   Black = 'black'
 }
 
+export enum SquareType {
+  Light = 'light',
+  Dark = 'dark'
+}
+
 export interface Piece {
   type: PieceType;
   color: Color;

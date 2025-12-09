@@ -1,5 +1,5 @@
-import { Color, PieceType } from './types';
-import type { File, Piece, Move, Square, CastlingRights, GameState } from './types';
+import { Color, PieceType, SquareType } from './types';
+import type { File, Piece, Move, Square, CastlingRights, GameState} from './types';
 import { SquareUtils } from './square_utils';
 import { MoveGenerator } from './move_generator';
 import { type Command } from '../commands/types';
@@ -218,7 +218,6 @@ export class Board implements BoardStateReader {
 
   public isGameOver(): { isOver: boolean; reason?: 'checkmate' | 'stalemate' | 'draw' } {
     const validMoves = this.getAllValidMoves();
-
     if (validMoves.length === 0) {
       return this.isInCheck()
         ? { isOver: true, reason: 'checkmate' }
@@ -227,6 +226,10 @@ export class Board implements BoardStateReader {
 
     if (this.halfMoveClock >= 100) {
       return { isOver: true, reason: 'draw' };
+    }
+
+    if (this.hasInsufficientMaterial()) {
+      return { isOver: true, reason: 'draw'};
     }
 
     return { isOver: false };
@@ -413,6 +416,51 @@ export class Board implements BoardStateReader {
     return !isInCheck;
   }
 
+  private hasInsufficientMaterial(): boolean {
+    const whitePieces = this.piecePositions.get(Color.White)!;
+    const blackPieces = this.piecePositions.get(Color.Black)!;
+
+    // If more than two piece types available, king has more than one supporting piece so sufficient material is present
+    const supportingWhitePieces = [...whitePieces].filter(([pieceType, indices]) => indices.size > 0 && pieceType != PieceType.King)
+    if (supportingWhitePieces.length > 1) {
+      return false;
+    }
+
+    const supportingBlackPieces = [...blackPieces].filter(([pieceType, indices]) => indices.size > 0 && pieceType != PieceType.King);
+    if (supportingBlackPieces.length > 1) {
+      return false;
+    }
+
+    const onlyWhiteKing = supportingWhitePieces.length == 0;
+    const onlyBlackKing = supportingBlackPieces.length == 0;
+
+    // King vs king is an insufficient material scenario
+    if (onlyWhiteKing && onlyBlackKing) {
+      return true;
+    }
+
+    // Only one side has an unsupported king, need to check K+B vs K, K+N vs K, 
+    if (onlyWhiteKing || onlyBlackKing) {
+        const checkPieces = onlyWhiteKing ? supportingBlackPieces : supportingWhitePieces;
+        
+        // Only one piece type should be available, check whether it is a bishop or king
+        if (checkPieces[0][0] === PieceType.Bishop || PieceType.Knight){
+          return true;
+        }
+    }
+    
+    // If both sides have one bishop that occupy the same square type, there is insufficient material
+    if (supportingWhitePieces[0][0] === PieceType.Bishop && supportingBlackPieces[0][0] === PieceType.Bishop) {
+      const whiteBishopSquare = SquareUtils.fromIndex(supportingWhitePieces[0][1].values().next().value!)
+      const blackBishopSquare = SquareUtils.fromIndex(supportingBlackPieces[0][1].values().next().value!)
+
+      if (this.getSquareType(whiteBishopSquare) === this.getSquareType(blackBishopSquare)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private createPieceTypeMap(): Map<PieceType, Set<number>> {
     return new Map([
       [PieceType.King, new Set()],
@@ -468,6 +516,10 @@ export class Board implements BoardStateReader {
   private movePieceInternal(from: Square, to: Square): void {
     const piece = this.removePiece(from);
     if (piece) this.placePiece(to, piece);
+  }
+
+  private getSquareType(square: Square) : SquareType {
+    return (square.charCodeAt(0) + SquareUtils.getRank(square) + 1) % 2 == 0 ? SquareType.Light : SquareType.Dark
   }
 
   private invalidateCache(): void {

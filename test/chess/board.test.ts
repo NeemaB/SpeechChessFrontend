@@ -189,13 +189,24 @@ describe('Board Functionality', () => {
     });
 
     test('king cannot move into check', () => {
+      // Rook on a2 attacks the entire 2nd rank and a-file
       const board = Board.fromFEN('8/8/8/4K3/8/8/r7/7k w - - 0 1');
       const moves = board.getTargetSquares('e5');
       
-      // Cannot move to a-file squares (attacked by rook)
-      expect(moves).not.toContain('d5');
-      expect(moves).not.toContain('d4');
-      expect(moves).not.toContain('d6');
+      // Cannot move to squares on a-file or 2nd rank that are attacked
+      // Rook on a2 attacks: a1-a8 (a-file) and a2-h2 (2nd rank)
+      // King on e5 can move to: d4, d5, d6, e4, e6, f4, f5, f6
+      // None of these are on the a-file or 2nd rank, so all should be valid
+      // Let's change the test - put rook on d2 to attack d-file
+      const board2 = Board.fromFEN('8/8/8/4K3/8/8/3r4/7k w - - 0 1');
+      const moves2 = board2.getTargetSquares('e5');
+      
+      // Rook on d2 attacks d-file: d1-d8
+      // King on e5 adjacent squares: d4, d5, d6, e4, e6, f4, f5, f6
+      // d4, d5, d6 are attacked by rook on d2
+      expect(moves2).not.toContain('d5');
+      expect(moves2).not.toContain('d4');
+      expect(moves2).not.toContain('d6');
     });
 
     test('king cannot capture protected piece', () => {
@@ -253,12 +264,9 @@ describe('Board Functionality', () => {
     });
 
     test('castling rights removed after rook captured', () => {
-      const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/7n/PPPPPPPP/R3K2R b KQkq - 0 1');
-      board.executeMove(move(PieceType.Knight, Color.Black, 'h3', 'g1'));
-      
-      // Now simulate taking on h1
-      const board2 = Board.fromFEN('r3k2r/pppppppp/8/8/7b/8/PPPPPPPP/R3K2R b KQkq - 0 1');
-      board2.executeMove(move(PieceType.Bishop, Color.Black, 'h4', 'h1'));
+      // Now simulate taking on h1 - bishop needs to be on diagonal to h1
+      const board2 = Board.fromFEN('r3k2r/pppppppp/8/3b4/8/4P1P1/PPPPP3/R3K2R b KQkq - 0 1');
+      board2.executeMove(move(PieceType.Bishop, Color.Black, 'd5', 'h1'));
       
       expect(board2.getGameState().castlingRights.whiteKingside).toBe(false);
     });
@@ -266,7 +274,8 @@ describe('Board Functionality', () => {
 
   describe('Check and Pin Detection', () => {
     test('piece pinned to king cannot move off pin line', () => {
-      const board = Board.fromFEN('8/8/8/8/r2B4/8/8/3K3k w - - 0 1');
+      // Bishop on d4 is pinned by rook on a4 to king on h4 (along rank 4)
+      const board = Board.fromFEN('8/8/8/8/r2B3K/8/8/7k w - - 0 1');
       // Bishop on d4 is pinned by rook on a4
       expect(board.getTargetSquares('d4')).toEqual([]);
     });
@@ -281,23 +290,29 @@ describe('Board Functionality', () => {
     });
 
     test('must block or capture when in check', () => {
-      const board = Board.fromFEN('8/8/8/8/r3K3/8/4R3/7k w - - 0 1');
-      // King in check from rook, only legal moves are king moves or blocking
-      const rookMoves = board.getTargetSquares('e2');
-      expect(rookMoves).toContain('a2'); // Block
-      expect(rookMoves).not.toContain('f2'); // Does not block
+      // King on e4 in check from rook on a4, rook on e2 can block by moving to e4... 
+      // wait, that's the king's square. Let's fix the position.
+      // King on h4 in check from rook on a4, white rook on d2 can block on d4
+      const board = Board.fromFEN('8/8/8/8/r6K/8/3R4/7k w - - 0 1');
+      const rookMoves = board.getTargetSquares('d2');
+      expect(rookMoves).toContain('d4'); // Block
+      expect(rookMoves).not.toContain('d1'); // Does not block
     });
 
     test('double check requires king move', () => {
-      const board = Board.fromFEN('8/8/5b2/8/r3K3/8/4R3/7k w - - 0 1');
+      // King on h4, double check from rook on a4 and bishop on e7
+      const board = Board.fromFEN('8/4b3/8/8/r6K/8/3R4/7k w - - 0 1');
       // King in double check - rook cannot help
-      const rookMoves = board.getTargetSquares('e2');
+      const rookMoves = board.getTargetSquares('d2');
       expect(rookMoves).toHaveLength(0);
     });
 
     test('isInCheck returns correct value', () => {
+      // King on e4 attacked by rook on a4
       const inCheck = Board.fromFEN('8/8/8/8/r3K3/8/8/7k w - - 0 1');
-      const notInCheck = Board.fromFEN('8/8/8/8/r4K2/8/8/7k w - - 0 1');
+      // King on f4 NOT attacked by rook on a4 (king is not on the a-file or 4th rank... wait, it IS on 4th rank)
+      // Let's put king on f5 instead
+      const notInCheck = Board.fromFEN('8/8/8/5K2/r7/8/8/7k w - - 0 1');
       
       expect(inCheck.isInCheck()).toBe(true);
       expect(notInCheck.isInCheck()).toBe(false);
@@ -306,7 +321,7 @@ describe('Board Functionality', () => {
 
   describe('Game End Conditions', () => {
     test('checkmate detected - back rank mate', () => {
-      const board = Board.fromFEN('6k1/5ppp/8/8/8/8/8/r3K3 w - - 0 1');
+      const board = Board.fromFEN('R5k1/5ppp/8/8/8/8/8/4K3 b - - 0 1');
       const result = board.isGameOver();
       
       expect(result.isOver).toBe(true);
@@ -314,7 +329,7 @@ describe('Board Functionality', () => {
     });
 
     test('checkmate detected - smothered mate', () => {
-      const board = Board.fromFEN('r7/8/8/8/8/8/5PPP/5RKn w - - 0 1');
+      const board = Board.fromFEN('r6k/8/8/8/8/8/5nPP/6RK w - - 0 1');
       const result = board.isGameOver();
       
       expect(result.isOver).toBe(true);
@@ -322,7 +337,7 @@ describe('Board Functionality', () => {
     });
 
     test('stalemate detected', () => {
-      const board = Board.fromFEN('k7/8/1K6/8/8/8/8/8 b - - 0 1');
+      const board = Board.fromFEN('k7/8/1K6/4Q3/8/8/8/8 b - - 0 1');
       const result = board.isGameOver();
       
       expect(result.isOver).toBe(true);
@@ -335,6 +350,38 @@ describe('Board Functionality', () => {
       
       expect(result.isOver).toBe(true);
       expect(result.reason).toBe('stalemate');
+    });
+
+    test('insufficient material draw, K vs K', () => {
+      const board = Board.fromFEN('k7/8/8/3K4/8/8/8/8 w - - 0 1');
+      const result = board.isGameOver();
+
+      expect(result.isOver).toBe(true);
+      expect(result.reason).toBe('draw');
+    });
+
+    test('insufficient material draw, K vs K+B', () => {
+      const board = Board.fromFEN('8/8/3B4/8/3K4/8/5k2/8 w - - 0 1');
+      const result = board.isGameOver();
+
+      expect(result.isOver).toBe(true);
+      expect(result.reason).toBe('draw');
+    });
+
+    test('insufficient material draw, K vs K+N', () => {
+      const board = Board.fromFEN('8/8/8/6n1/8/8/6k1/4K3 w - - 0 1');
+      const result = board.isGameOver();
+      
+      expect(result.isOver).toBe(true);
+      expect(result.reason).toBe('draw');
+    })
+
+    test('insufficient material draw, K+B vs K+B same colour squares', () => {
+      const board = Board.fromFEN('8/8/3B4/8/3K4/8/3b1k2/8 b - - 0 1');
+      const result = board.isGameOver();
+
+      expect(result.isOver).toBe(true);
+      expect(result.reason).toBe('draw');
     });
 
     test('50 move rule detected', () => {
@@ -393,23 +440,25 @@ describe('Board Functionality', () => {
     });
 
     test('capture removes opponent piece', () => {
-      const board = Board.fromFEN('8/8/8/3p4/4N3/8/8/4K2k w - - 0 1');
+      const board = Board.fromFEN('8/8/3p4/8/4N3/8/8/4K2k w - - 0 1');
+      // Knight on e4 captures pawn on d5 (not d6)
       board.executeMove(move(PieceType.Knight, Color.White, 'e4', 'd6'));
       
       expect(board.getPieceAt('d6')?.color).toBe(Color.White);
       expect(board.findPieces(PieceType.Pawn, Color.Black)).toHaveLength(0);
     });
 
-    test('half move clock resets on pawn move', () => {
-      const board = Board.fromFEN('8/8/8/8/8/8/4P3/4K2k w - - 10 1');
-      board.executeMove(move(PieceType.Pawn, Color.White, 'e2', 'e4'));
+    test('half move clock resets on capture', () => {
+      const board = Board.fromFEN('8/8/3p4/8/4N3/8/8/4K2k w - - 10 1');
+      // Knight on e4 captures pawn on d5 (not d6)
+      board.executeMove(move(PieceType.Knight, Color.White, 'e4', 'd6'));
       
       expect(board.getGameState().halfMoveClock).toBe(0);
     });
 
-    test('half move clock resets on capture', () => {
-      const board = Board.fromFEN('8/8/8/3p4/4N3/8/8/4K2k w - - 10 1');
-      board.executeMove(move(PieceType.Knight, Color.White, 'e4', 'd6'));
+    test('half move clock resets on pawn move', () => {
+      const board = Board.fromFEN('8/8/8/8/8/8/4P3/4K2k w - - 10 1');
+      board.executeMove(move(PieceType.Pawn, Color.White, 'e2', 'e4'));
       
       expect(board.getGameState().halfMoveClock).toBe(0);
     });
@@ -443,7 +492,8 @@ describe('Board Functionality', () => {
     });
 
     test('findPieces updates after capture', () => {
-      const board = Board.fromFEN('8/8/8/3p4/4N3/8/8/4K2k w - - 0 1');
+      const board = Board.fromFEN('8/8/3p4/8/4N3/8/8/4K2k w - - 0 1');
+      // Knight on e4 captures pawn on d5 (not d6)
       board.executeMove(move(PieceType.Knight, Color.White, 'e4', 'd6'));
       
       expect(board.findPieces(PieceType.Pawn, Color.Black)).toHaveLength(0);
@@ -499,12 +549,12 @@ describe('Board Functionality', () => {
   });
 
   describe('Edge Cases', () => {
-    test('king vs king is stalemate not checkmate', () => {
+    test('king vs king is a draw', () => {
       const board = Board.fromFEN('8/8/8/8/8/2k5/8/K7 w - - 0 1');
       const result = board.isGameOver();
       
-      // King has moves, so not stalemate yet
-      expect(result.isOver).toBe(false);
+      expect(result.isOver).toBe(true);
+      expect(result.reason).toBe('draw');
     });
 
     test('en passant removes check', () => {
@@ -518,13 +568,6 @@ describe('Board Functionality', () => {
       // Even if a rook appears on h1 later, castling rights are gone
       const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qq - 0 1');
       expect(board.getTargetSquares('e1')).not.toContain('g1');
-    });
-
-    test('minimum position - just kings', () => {
-      const board = Board.fromFEN('8/8/8/8/8/8/8/4K2k w - - 0 1');
-      
-      expect(board.getAllValidMoves().length).toBeGreaterThan(0);
-      expect(board.isGameOver().isOver).toBe(false);
     });
   });
 });
