@@ -11,7 +11,7 @@ import {
   type Rank,
   type Square,
   PieceType
-} from '../chess/types';
+} from '../types';
 
 export class CommandParser {
   // ============================================

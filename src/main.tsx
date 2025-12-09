@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import { CommandParser } from './commands/command_parser.ts';
+import { CommandParser } from './chess/commands/command_parser.ts';
 
 const testCases: Array<{ input: string; description: string }> = [
   { input: 'bd3', description: 'File to square move' },

@@ -1,4 +1,4 @@
-import type { Square, File, PieceType, Rank } from "../chess/types";
+import type { Square, File, PieceType, Rank } from "../types";
 
 export type CommandInfo = PieceType | Square | File;
 

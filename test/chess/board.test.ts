@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { Board } from '../../src/chess/board';
 import { Color, Move, PieceType, Square, type File } from '../../src/chess/types';
-import { Action, Command } from '../../src/commands/types';
+import { Action, Command } from '../../src/chess/commands/types';
 
 // Helper to create moves quickly
 const move = (
@@ -189,24 +189,12 @@ describe('Board Functionality', () => {
     });
 
     test('king cannot move into check', () => {
-      // Rook on a2 attacks the entire 2nd rank and a-file
-      const board = Board.fromFEN('8/8/8/4K3/8/8/r7/7k w - - 0 1');
+      const board = Board.fromFEN('8/8/8/4K3/8/8/3r4/7k w - - 0 1');
       const moves = board.getTargetSquares('e5');
       
-      // Cannot move to squares on a-file or 2nd rank that are attacked
-      // Rook on a2 attacks: a1-a8 (a-file) and a2-h2 (2nd rank)
-      // King on e5 can move to: d4, d5, d6, e4, e6, f4, f5, f6
-      // None of these are on the a-file or 2nd rank, so all should be valid
-      // Let's change the test - put rook on d2 to attack d-file
-      const board2 = Board.fromFEN('8/8/8/4K3/8/8/3r4/7k w - - 0 1');
-      const moves2 = board2.getTargetSquares('e5');
-      
-      // Rook on d2 attacks d-file: d1-d8
-      // King on e5 adjacent squares: d4, d5, d6, e4, e6, f4, f5, f6
-      // d4, d5, d6 are attacked by rook on d2
-      expect(moves2).not.toContain('d5');
-      expect(moves2).not.toContain('d4');
-      expect(moves2).not.toContain('d6');
+      expect(moves).not.toContain('d5');
+      expect(moves).not.toContain('d4');
+      expect(moves).not.toContain('d6');
     });
 
     test('king cannot capture protected piece', () => {

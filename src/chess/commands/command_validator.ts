@@ -1,12 +1,12 @@
-import type { Square, Piece, Move, File } from '../chess/types';
-import { Color, PieceType } from '../chess/types';
-import { SquareUtils } from '../chess/square_utils';
-import type { BoardStateReader } from '../chess/board_state';
-import { PieceMoveValidator } from '../chess/piece_move_validator';
-import { AttackDetector } from '../chess/attack_detector';
-import { CastlingHandler } from '../chess/castling_handler';
-import { type Command, type CommandInfo, Action } from '../commands/types';
-import type { CastlingRights } from '../chess/types';
+import type { Square, Piece, Move, File } from '../types';
+import { Color, PieceType } from '../types';
+import { SquareUtils } from '../square_utils';
+import type { BoardStateReader } from '../board_state';
+import { PieceMoveValidator } from '../piece_move_validator';
+import { AttackDetector } from '../attack_detector';
+import { CastlingHandler } from '../castling_handler';
+import { type Command, type CommandInfo, Action } from './types';
+import type { CastlingRights } from '../types';
 
 /**
  * Validates voice commands against current board state.
@@ -25,7 +25,7 @@ export class CommandValidator {
    * Validates whether a voice command can be legally executed.
    * A command is valid only if exactly one legal move can be constructed.
    */
-  isValidCommand(command: Command): boolean {
+  public isValidCommand(command: Command): boolean {
     if (!command.action) return false;
     if (command.action === Action.Resign) return true;
     if (command.action === Action.ShortCastle) return CastlingHandler.canCastleKingside(this.boardState);
@@ -42,7 +42,7 @@ export class CommandValidator {
   /**
    * Find all valid moves that match the command's criteria.
    */
-  findValidMovesForCommand(command: Command): Move[] {
+  private findValidMovesForCommand(command: Command): Move[] {
     const candidateStarts = this.getCandidateStartSquares(command.startInfo);
     if (candidateStarts.length === 0) return [];
 
