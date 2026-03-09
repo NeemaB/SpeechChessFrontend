@@ -4,14 +4,13 @@ import { SquareUtils } from './square_utils';
 import type { BoardStateReader } from './board_state';
 
 /**
- * Validates piece movement rules for supported piece types.
+ * Validates piece movement rules for all piece types.
  * Does not check for check/pin constraints - only basic movement patterns.
  */
 export class PieceMoveValidator {
 
   /**
    * Validate if a piece can move from one square to another based on movement rules.
-   * Only validates King, Queen, and Pawn movements currently.
    */
   static canPieceMoveTo(
     piece: Piece,
@@ -24,6 +23,12 @@ export class PieceMoveValidator {
         return this.canKingMoveTo(from, to);
       case PieceType.Queen:
         return this.canQueenMoveTo(from, to, boardState);
+      case PieceType.Rook:
+        return this.canRookMoveTo(from, to, boardState);
+      case PieceType.Bishop:
+        return this.canBishopMoveTo(from, to, boardState);
+      case PieceType.Knight:
+        return this.canKnightMoveTo(from, to);
       case PieceType.Pawn:
         return this.canPawnMoveTo(piece.color, from, to, boardState);
       default:
@@ -66,6 +71,65 @@ export class PieceMoveValidator {
     if (!isStraight && !isDiagonal) return false;
 
     return this.isPathClear(fromFile, fromRank, toFile, toRank, boardState);
+  }
+
+  /**
+   * Check if rook can move from start to end (straight line along rank or file).
+   * Validates path is clear of obstructions.
+   */
+  static canRookMoveTo(from: Square, to: Square, boardState: BoardStateReader): boolean {
+    const fromFile = SquareUtils.getFile(from);
+    const fromRank = SquareUtils.getRank(from);
+    const toFile = SquareUtils.getFile(to);
+    const toRank = SquareUtils.getRank(to);
+
+    const fileDiff = toFile - fromFile;
+    const rankDiff = toRank - fromRank;
+
+    // Rook moves only along ranks or files (one must be 0)
+    const isStraight = fileDiff === 0 || rankDiff === 0;
+
+    if (!isStraight) return false;
+
+    return this.isPathClear(fromFile, fromRank, toFile, toRank, boardState);
+  }
+
+  /**
+   * Check if bishop can move from start to end (diagonal line).
+   * Validates path is clear of obstructions.
+   */
+  static canBishopMoveTo(from: Square, to: Square, boardState: BoardStateReader): boolean {
+    const fromFile = SquareUtils.getFile(from);
+    const fromRank = SquareUtils.getRank(from);
+    const toFile = SquareUtils.getFile(to);
+    const toRank = SquareUtils.getRank(to);
+
+    const fileDiff = toFile - fromFile;
+    const rankDiff = toRank - fromRank;
+
+    // Bishop moves only diagonally (absolute file diff equals absolute rank diff)
+    const isDiagonal = Math.abs(fileDiff) === Math.abs(rankDiff) && fileDiff !== 0;
+
+    if (!isDiagonal) return false;
+
+    return this.isPathClear(fromFile, fromRank, toFile, toRank, boardState);
+  }
+
+  /**
+   * Check if knight can move from start to end (L-shape: 2+1 or 1+2).
+   * Knights jump over pieces, so no path checking needed.
+   */
+  static canKnightMoveTo(from: Square, to: Square): boolean {
+    const fromFile = SquareUtils.getFile(from);
+    const fromRank = SquareUtils.getRank(from);
+    const toFile = SquareUtils.getFile(to);
+    const toRank = SquareUtils.getRank(to);
+
+    const fileDiff = Math.abs(toFile - fromFile);
+    const rankDiff = Math.abs(toRank - fromRank);
+
+    // Knight moves in L-shape: (2,1) or (1,2)
+    return (fileDiff === 2 && rankDiff === 1) || (fileDiff === 1 && rankDiff === 2);
   }
 
   /**
@@ -143,8 +207,6 @@ export class PieceMoveValidator {
 
   /** Check if piece type is currently supported for validation */
   static isSupportedPieceType(type: PieceType): boolean {
-    return type === PieceType.King ||
-      type === PieceType.Queen ||
-      type === PieceType.Pawn;
+    return true;
   }
 }

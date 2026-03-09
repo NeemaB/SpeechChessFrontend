@@ -7,23 +7,65 @@ import { AttackDetector } from '../attack_detector';
 import { CastlingHandler } from '../castling_handler';
 import { type Command, type CommandInfo, Action } from './types';
 import type { CastlingRights } from '../types';
+import {
+  MissingActionError,
+  UnsupportedActionError,
+  NoValidMoveError,
+  AmbiguousMoveError,
+  IllegalCastlingError,
+} from './errors';
 
 /**
- * Validates voice commands against current board state.
+ * Validates voice commands against current board state and converts them to moves.
  * A command is valid only if exactly one legal move can be constructed.
  */
 export class CommandValidator {
   private boardState: BoardStateReader;
 
-  constructor(
-    boardState: BoardStateReader,
-  ) {
+  constructor(boardState: BoardStateReader) {
     this.boardState = boardState;
+  }
+
+  /**
+   * Converts a command to an array of moves to execute.
+   * For regular moves, returns a single move.
+   * For castling, returns two moves (king move and rook move).
+   * 
+   * @throws {MissingActionError} If command has no action
+   * @throws {UnsupportedActionError} If action is Resign or Promote
+   * @throws {IllegalCastlingError} If castling is not allowed
+   * @throws {NoValidMoveError} If no valid move matches the command
+   * @throws {AmbiguousMoveError} If multiple valid moves match the command
+   */
+  public convertToMoves(command: Command): Move[] {
+    if (!command.action) {
+      throw new MissingActionError();
+    }
+
+    if (command.action === Action.Resign || command.action === Action.Promote) {
+      throw new UnsupportedActionError(command.action);
+    }
+
+    if (command.action === Action.ShortCastle) {
+      return this.convertCastlingToMoves(true);
+    }
+
+    if (command.action === Action.LongCastle) {
+      return this.convertCastlingToMoves(false);
+    }
+
+    if (command.action === Action.Move || command.action === Action.Capture) {
+      return this.convertMoveOrCaptureToMoves(command);
+    }
+
+    throw new UnsupportedActionError(command.action);
   }
 
   /**
    * Validates whether a voice command can be legally executed.
    * A command is valid only if exactly one legal move can be constructed.
+   * 
+   * @deprecated Use convertToMoves() and handle exceptions instead
    */
   public isValidCommand(command: Command): boolean {
     if (!command.action) return false;
@@ -37,6 +79,61 @@ export class CommandValidator {
     }
 
     return false;
+  }
+
+  /**
+   * Converts a castling command to the king and rook moves.
+   */
+  private convertCastlingToMoves(kingside: boolean): Move[] {
+    const canCastle = kingside
+      ? CastlingHandler.canCastleKingside(this.boardState)
+      : CastlingHandler.canCastleQueenside(this.boardState);
+
+    if (!canCastle) {
+      throw new IllegalCastlingError(kingside ? 'kingside' : 'queenside');
+    }
+
+    const color = this.boardState.getActiveColor();
+    const rank = color === Color.White ? 0 : 7;
+    const rankChar = color === Color.White ? '1' : '8';
+
+    const kingStartFile = 4;
+    const kingEndFile = kingside ? 6 : 2;
+    const rookStartFile = kingside ? 7 : 0;
+    const rookEndFile = kingside ? 5 : 3;
+
+    const kingMove: Move = {
+      piece: PieceType.King,
+      color,
+      startSquare: SquareUtils.fromIndex(SquareUtils.fileRankToIndex(kingStartFile, rank)),
+      endSquare: SquareUtils.fromIndex(SquareUtils.fileRankToIndex(kingEndFile, rank))
+    };
+
+    const rookMove: Move = {
+      piece: PieceType.Rook,
+      color,
+      startSquare: SquareUtils.fromIndex(SquareUtils.fileRankToIndex(rookStartFile, rank)),
+      endSquare: SquareUtils.fromIndex(SquareUtils.fileRankToIndex(rookEndFile, rank))
+    };
+
+    return [kingMove, rookMove];
+  }
+
+  /**
+   * Converts a move or capture command to the corresponding move(s).
+   */
+  private convertMoveOrCaptureToMoves(command: Command): Move[] {
+    const validMoves = this.findValidMovesForCommand(command);
+
+    if (validMoves.length === 0) {
+      throw new NoValidMoveError();
+    }
+
+    if (validMoves.length > 1) {
+      throw new AmbiguousMoveError(validMoves.length);
+    }
+
+    return [validMoves[0]];
   }
 
   /**

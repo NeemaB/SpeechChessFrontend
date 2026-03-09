@@ -2,6 +2,14 @@ import { describe, test, expect } from 'vitest';
 import { Board } from '../../src/chess/board';
 import { Color, Move, PieceType, Square, type File } from '../../src/chess/types';
 import { Action, Command } from '../../src/chess/commands/types';
+import { CommandValidator } from '../../src/chess/commands/command_validator';
+import { 
+  MissingActionError, 
+  UnsupportedActionError, 
+  NoValidMoveError, 
+  AmbiguousMoveError,
+  IllegalCastlingError 
+} from '../../src/chess/commands/errors';
 
 // Helper to create moves quickly
 const move = (
@@ -252,7 +260,6 @@ describe('Board Functionality', () => {
     });
 
     test('castling rights removed after rook captured', () => {
-      // Now simulate taking on h1 - bishop needs to be on diagonal to h1
       const board2 = Board.fromFEN('r3k2r/pppppppp/8/3b4/8/4P1P1/PPPPP3/R3K2R b KQkq - 0 1');
       board2.executeMove(move(PieceType.Bishop, Color.Black, 'd5', 'h1'));
       
@@ -262,44 +269,34 @@ describe('Board Functionality', () => {
 
   describe('Check and Pin Detection', () => {
     test('piece pinned to king cannot move off pin line', () => {
-      // Bishop on d4 is pinned by rook on a4 to king on h4 (along rank 4)
       const board = Board.fromFEN('8/8/8/8/r2B3K/8/8/7k w - - 0 1');
-      // Bishop on d4 is pinned by rook on a4
       expect(board.getTargetSquares('d4')).toEqual([]);
     });
 
     test('piece pinned can move along pin line', () => {
       const board = Board.fromFEN('8/8/8/8/r2R3K/8/8/7k w - - 0 1');
       const moves = board.getTargetSquares('d4');
-      expect(moves).toContain('a4'); // Can capture
+      expect(moves).toContain('a4');
       expect(moves).toContain('b4');
       expect(moves).toContain('c4');
-      expect(moves).not.toContain('d5'); // Cannot leave pin
+      expect(moves).not.toContain('d5');
     });
 
     test('must block or capture when in check', () => {
-      // King on e4 in check from rook on a4, rook on e2 can block by moving to e4... 
-      // wait, that's the king's square. Let's fix the position.
-      // King on h4 in check from rook on a4, white rook on d2 can block on d4
       const board = Board.fromFEN('8/8/8/8/r6K/8/3R4/7k w - - 0 1');
       const rookMoves = board.getTargetSquares('d2');
-      expect(rookMoves).toContain('d4'); // Block
-      expect(rookMoves).not.toContain('d1'); // Does not block
+      expect(rookMoves).toContain('d4');
+      expect(rookMoves).not.toContain('d1');
     });
 
     test('double check requires king move', () => {
-      // King on h4, double check from rook on a4 and bishop on e7
       const board = Board.fromFEN('8/4b3/8/8/r6K/8/3R4/7k w - - 0 1');
-      // King in double check - rook cannot help
       const rookMoves = board.getTargetSquares('d2');
       expect(rookMoves).toHaveLength(0);
     });
 
     test('isInCheck returns correct value', () => {
-      // King on e4 attacked by rook on a4
       const inCheck = Board.fromFEN('8/8/8/8/r3K3/8/8/7k w - - 0 1');
-      // King on f4 NOT attacked by rook on a4 (king is not on the a-file or 4th rank... wait, it IS on 4th rank)
-      // Let's put king on f5 instead
       const notInCheck = Board.fromFEN('8/8/8/5K2/r7/8/8/7k w - - 0 1');
       
       expect(inCheck.isInCheck()).toBe(true);
@@ -429,7 +426,6 @@ describe('Board Functionality', () => {
 
     test('capture removes opponent piece', () => {
       const board = Board.fromFEN('8/8/3p4/8/4N3/8/8/4K2k w - - 0 1');
-      // Knight on e4 captures pawn on d5 (not d6)
       board.executeMove(move(PieceType.Knight, Color.White, 'e4', 'd6'));
       
       expect(board.getPieceAt('d6')?.color).toBe(Color.White);
@@ -438,7 +434,6 @@ describe('Board Functionality', () => {
 
     test('half move clock resets on capture', () => {
       const board = Board.fromFEN('8/8/3p4/8/4N3/8/8/4K2k w - - 10 1');
-      // Knight on e4 captures pawn on d5 (not d6)
       board.executeMove(move(PieceType.Knight, Color.White, 'e4', 'd6'));
       
       expect(board.getGameState().halfMoveClock).toBe(0);
@@ -481,7 +476,6 @@ describe('Board Functionality', () => {
 
     test('findPieces updates after capture', () => {
       const board = Board.fromFEN('8/8/3p4/8/4N3/8/8/4K2k w - - 0 1');
-      // Knight on e4 captures pawn on d5 (not d6)
       board.executeMove(move(PieceType.Knight, Color.White, 'e4', 'd6'));
       
       expect(board.findPieces(PieceType.Pawn, Color.Black)).toHaveLength(0);
@@ -526,7 +520,7 @@ describe('Board Functionality', () => {
     test('cache invalidates after move', () => {
       const board = new Board();
       const before = board.getTargetSquares('d1');
-      expect(before).toHaveLength(0); // Queen blocked
+      expect(before).toHaveLength(0);
       
       board.executeMove(move(PieceType.Pawn, Color.White, 'd2', 'd4'));
       board.executeMove(move(PieceType.Pawn, Color.Black, 'e7', 'e6'));
@@ -546,21 +540,384 @@ describe('Board Functionality', () => {
     });
 
     test('en passant removes check', () => {
-      // Rare case: en passant capturing piece that was giving check
       const board = Board.fromFEN('8/8/8/kPp5/8/8/8/4K3 w - c6 0 1');
       const moves = board.getAllValidMoves();
       expect(moves.some(m => m.endSquare === 'c6')).toBe(true);
     });
 
     test('cannot castle after rook captured and replaced', () => {
-      // Even if a rook appears on h1 later, castling rights are gone
       const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qq - 0 1');
       expect(board.getTargetSquares('e1')).not.toContain('g1');
     });
   });
 });
 
-describe('Command Validation', () => {
+describe('Execute Command', () => {
+  test('executeCommand returns true and updates board for valid move', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e2',
+      action: Action.Move,
+      endInfo: 'e4'
+    };
+    
+    const result = board.executeCommand(command);
+    
+    expect(result).toBe(true);
+    expect(board.getPieceAt('e2')).toBeNull();
+    expect(board.getPieceAt('e4')?.type).toBe(PieceType.Pawn);
+  });
+
+  test('executeCommand returns false for invalid move', () => {
+    const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    const command: Command = {
+      startInfo: 'e2',
+      action: Action.Move,
+      endInfo: 'e5'
+    };
+    
+    const result = board.executeCommand(command);
+    
+    expect(result).toBe(false);
+    expect(board.getPieceAt('e2')?.type).toBe(PieceType.Pawn);
+  });
+
+  test('executeCommand handles resign correctly', () => {
+    const board = new Board();
+    const command: Command = {
+      action: Action.Resign
+    };
+    
+    const result = board.executeCommand(command);
+    
+    expect(result).toBe(true);
+    expect(board.hasResigned()).toBe(true);
+    expect(board.isGameOver().reason).toBe('resignation');
+  });
+
+  test('executeCommand returns false for promote action', () => {
+    const board = new Board();
+    const command: Command = {
+      action: Action.Promote
+    };
+    
+    const result = board.executeCommand(command);
+    
+    expect(result).toBe(false);
+  });
+
+  test('executeCommand handles short castle correctly', () => {
+    const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1');
+    const command: Command = {
+      action: Action.ShortCastle
+    };
+    
+    const result = board.executeCommand(command);
+    
+    expect(result).toBe(true);
+    expect(board.getPieceAt('g1')?.type).toBe(PieceType.King);
+    expect(board.getPieceAt('f1')?.type).toBe(PieceType.Rook);
+    expect(board.getPieceAt('e1')).toBeNull();
+    expect(board.getPieceAt('h1')).toBeNull();
+  });
+
+  test('executeCommand handles long castle correctly', () => {
+    const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1');
+    const command: Command = {
+      action: Action.LongCastle
+    };
+    
+    const result = board.executeCommand(command);
+    
+    expect(result).toBe(true);
+    expect(board.getPieceAt('c1')?.type).toBe(PieceType.King);
+    expect(board.getPieceAt('d1')?.type).toBe(PieceType.Rook);
+    expect(board.getPieceAt('e1')).toBeNull();
+    expect(board.getPieceAt('a1')).toBeNull();
+  });
+
+  test('executeCommand returns false for command without action', () => {
+    const board = new Board();
+    const command: Command = {
+      startInfo: 'e2',
+      endInfo: 'e4'
+    };
+    
+    const result = board.executeCommand(command);
+    
+    expect(result).toBe(false);
+  });
+
+  test('executeCommand switches active color after successful move', () => {
+    const board = new Board();
+    expect(board.getActiveColor()).toBe(Color.White);
+    
+    board.executeCommand({
+      startInfo: 'e2',
+      action: Action.Move,
+      endInfo: 'e4'
+    });
+    
+    expect(board.getActiveColor()).toBe(Color.Black);
+  });
+});
+
+describe('Command Validation - convertToMoves', () => {
+  test('convertToMoves throws MissingActionError when no action provided', () => {
+    const board = new Board();
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      startInfo: 'e2',
+      endInfo: 'e4'
+    };
+    
+    expect(() => validator.convertToMoves(command)).toThrow(MissingActionError);
+  });
+
+  test('convertToMoves throws UnsupportedActionError for resign action', () => {
+    const board = new Board();
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      action: Action.Resign
+    };
+    
+    expect(() => validator.convertToMoves(command)).toThrow(UnsupportedActionError);
+  });
+
+  test('convertToMoves throws UnsupportedActionError for promote action', () => {
+    const board = new Board();
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      action: Action.Promote
+    };
+    
+    expect(() => validator.convertToMoves(command)).toThrow(UnsupportedActionError);
+  });
+
+  test('convertToMoves throws IllegalCastlingError when castling not allowed', () => {
+    const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w - - 0 1');
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      action: Action.ShortCastle
+    };
+    
+    expect(() => validator.convertToMoves(command)).toThrow(IllegalCastlingError);
+  });
+
+  test('convertToMoves throws NoValidMoveError when no valid move found', () => {
+    const board = new Board();
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      startInfo: 'e2',
+      action: Action.Move,
+      endInfo: 'e5'
+    };
+    
+    expect(() => validator.convertToMoves(command)).toThrow(NoValidMoveError);
+  });
+
+  test('convertToMoves throws AmbiguousMoveError when multiple moves possible', () => {
+    const board = Board.fromFEN('3Q4/8/8/8/3Q4/8/8/4K2k w - - 0 1');
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      startInfo: PieceType.Queen,
+      action: Action.Move,
+      endInfo: 'd6'
+    };
+    
+    expect(() => validator.convertToMoves(command)).toThrow(AmbiguousMoveError);
+  });
+
+  test('convertToMoves returns two moves for valid short castle', () => {
+    const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1');
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      action: Action.ShortCastle
+    };
+    
+    const moves = validator.convertToMoves(command);
+    
+    expect(moves).toHaveLength(2);
+    expect(moves[0].piece).toBe(PieceType.King);
+    expect(moves[0].startSquare).toBe('e1');
+    expect(moves[0].endSquare).toBe('g1');
+    expect(moves[1].piece).toBe(PieceType.Rook);
+    expect(moves[1].startSquare).toBe('h1');
+    expect(moves[1].endSquare).toBe('f1');
+  });
+
+  test('convertToMoves returns two moves for valid long castle', () => {
+    const board = Board.fromFEN('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1');
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      action: Action.LongCastle
+    };
+    
+    const moves = validator.convertToMoves(command);
+    
+    expect(moves).toHaveLength(2);
+    expect(moves[0].piece).toBe(PieceType.King);
+    expect(moves[0].startSquare).toBe('e1');
+    expect(moves[0].endSquare).toBe('c1');
+    expect(moves[1].piece).toBe(PieceType.Rook);
+    expect(moves[1].startSquare).toBe('a1');
+    expect(moves[1].endSquare).toBe('d1');
+  });
+
+  test('convertToMoves returns single move for valid regular move', () => {
+    const board = new Board();
+    const validator = new CommandValidator(board);
+    const command: Command = {
+      startInfo: 'e2',
+      action: Action.Move,
+      endInfo: 'e4'
+    };
+    
+    const moves = validator.convertToMoves(command);
+    
+    expect(moves).toHaveLength(1);
+    expect(moves[0].piece).toBe(PieceType.Pawn);
+    expect(moves[0].startSquare).toBe('e2');
+    expect(moves[0].endSquare).toBe('e4');
+  });
+});
+
+describe('Command Validation - Rook moves', () => {
+  test('valid rook move command recognized', () => {
+    const board = Board.fromFEN('8/8/8/8/4R3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Rook,
+      action: Action.Move,
+      endInfo: 'e8'
+    };
+    expect(board.executeCommand(command)).toBe(true);
+    expect(board.getPieceAt('e8')?.type).toBe(PieceType.Rook);
+  });
+
+  test('rook cannot move diagonally', () => {
+    const board = Board.fromFEN('8/8/8/8/4R3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Rook,
+      action: Action.Move,
+      endInfo: 'g6'
+    };
+    expect(board.executeCommand(command)).toBe(false);
+  });
+
+  test('rook blocked by friendly piece', () => {
+    const board = Board.fromFEN('8/8/4P3/8/4R3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Rook,
+      action: Action.Move,
+      endInfo: 'e8'
+    };
+    expect(board.executeCommand(command)).toBe(false);
+  });
+
+  test('rook capture command recognized', () => {
+    const board = Board.fromFEN('4p3/8/8/8/4R3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Rook,
+      action: Action.Capture,
+      endInfo: 'e8'
+    };
+    expect(board.executeCommand(command)).toBe(true);
+    expect(board.getPieceAt('e8')?.type).toBe(PieceType.Rook);
+    expect(board.getPieceAt('e8')?.color).toBe(Color.White);
+  });
+});
+
+describe('Command Validation - Bishop moves', () => {
+  test('valid bishop move command recognized', () => {
+    const board = Board.fromFEN('8/8/8/8/4B3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Bishop,
+      action: Action.Move,
+      endInfo: 'h7'
+    };
+    expect(board.executeCommand(command)).toBe(true);
+    expect(board.getPieceAt('h7')?.type).toBe(PieceType.Bishop);
+  });
+
+  test('bishop cannot move straight', () => {
+    const board = Board.fromFEN('8/8/8/8/4B3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Bishop,
+      action: Action.Move,
+      endInfo: 'e7'
+    };
+    expect(board.executeCommand(command)).toBe(false);
+  });
+
+  test('bishop blocked by friendly piece', () => {
+    const board = Board.fromFEN('8/8/5P2/8/4B3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Bishop,
+      action: Action.Move,
+      endInfo: 'g7'
+    };
+    expect(board.executeCommand(command)).toBe(false);
+  });
+
+  test('bishop capture command recognized', () => {
+    const board = Board.fromFEN('7p/8/8/4B3/8/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Bishop,
+      action: Action.Capture,
+      endInfo: 'h8'
+    };
+    expect(board.executeCommand(command)).toBe(true);
+    expect(board.getPieceAt('h8')?.type).toBe(PieceType.Bishop);
+  });
+});
+
+describe('Command Validation - Knight moves', () => {
+  test('valid knight move command recognized', () => {
+    const board = Board.fromFEN('8/8/8/8/4N3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Knight,
+      action: Action.Move,
+      endInfo: 'f6'
+    };
+    expect(board.executeCommand(command)).toBe(true);
+    expect(board.getPieceAt('f6')?.type).toBe(PieceType.Knight);
+  });
+
+  test('knight cannot move diagonally', () => {
+    const board = Board.fromFEN('8/8/8/8/4N3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Knight,
+      action: Action.Move,
+      endInfo: 'f5'
+    };
+    expect(board.executeCommand(command)).toBe(false);
+  });
+
+  test('knight can jump over pieces', () => {
+    const board = Board.fromFEN('8/8/8/3PP3/3PN3/3PP3/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Knight,
+      action: Action.Move,
+      endInfo: 'f6'
+    };
+    expect(board.executeCommand(command)).toBe(true);
+    expect(board.getPieceAt('f6')?.type).toBe(PieceType.Knight);
+  });
+
+  test('knight capture command recognized', () => {
+    const board = Board.fromFEN('8/8/5p2/8/4N3/8/8/4K2k w - - 0 1');
+    const command: Command = {
+      startInfo: PieceType.Knight,
+      action: Action.Capture,
+      endInfo: 'f6'
+    };
+    expect(board.executeCommand(command)).toBe(true);
+    expect(board.getPieceAt('f6')?.type).toBe(PieceType.Knight);
+    expect(board.getPieceAt('f6')?.color).toBe(Color.White);
+  });
+});
+
+describe('Command Validation (legacy isValidCommand)', () => {
   test('valid move command recognized', () => {
     const board = Board.fromFEN('rnbqkbnr/pp6/2ppp1pp/5p2/2PQ4/2NB3N/PP1B1PPP/R3K2R w KQkq - 0 8');
     const command : Command = {
@@ -622,7 +979,6 @@ describe('Command Validation', () => {
   });
 
   test('move command with endInfo as file rejected when ambiguous', () => {
-    // Queen on d4 can reach multiple squares on the a-file (a4, a1, a7)
     const board = Board.fromFEN('8/8/8/8/3Q4/8/8/4K2k w - - 0 1');
     const command: Command = {
       startInfo: PieceType.Queen,
@@ -643,7 +999,6 @@ describe('Command Validation', () => {
   });
 
   test('pinned queen cannot move off pin line', () => {
-    // White queen on b3 pinned by black bishop on a4 to white king on c2
     const board = Board.fromFEN('4k3/8/8/8/b7/1Q6/2K5/8 w - - 0 1');
     const command: Command = {
       startInfo: PieceType.Queen,
@@ -684,7 +1039,6 @@ describe('Command Validation', () => {
   });
 
   test('pawn double push blocked by piece on intermediate square rejected', () => {
-    // Black pawn on e3 blocks white pawn's double push
     const board = Board.fromFEN('rnbqkbnr/pppp1ppp/8/8/8/4p3/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
     const command: Command = {
       startInfo: 'e2',
@@ -695,7 +1049,6 @@ describe('Command Validation', () => {
   });
 
   test('ambiguous move command rejected when multiple queens can reach same square', () => {
-    // Two white queens that can both reach d6
     const board = Board.fromFEN('3Q4/8/8/8/3Q4/8/8/4K2k w - - 0 1');
     const command: Command = {
       startInfo: PieceType.Queen,
@@ -716,7 +1069,6 @@ describe('Command Validation', () => {
   }); 
 
   test('king move into attacked square rejected', () => {
-    // King on e1, black rook on a2 attacks e2
     const board = Board.fromFEN('4k3/8/8/8/8/8/r7/4K3 w - - 0 1');
     const command: Command = {
       startInfo: PieceType.King,
@@ -727,7 +1079,6 @@ describe('Command Validation', () => {
   });
 
   test('queen move blocked by piece in path rejected', () => {
-  // Queen on d1 cannot reach d4 because pawn on d2 blocks
     const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
     const command: Command = {
       startInfo: PieceType.Queen,
@@ -768,7 +1119,6 @@ describe('Command Validation', () => {
   });
 
   test('valid en passant capture command recognized', () => {
-    // White pawn on f5, black just played e7-e5, en passant square is e6
     const board = Board.fromFEN('rnbqkbnr/pppp1ppp/8/4pP2/8/8/PPPPP1PP/RNBQKBNR w KQkq e6 0 3');
     const command: Command = {
       startInfo: 'f5',
@@ -855,7 +1205,6 @@ describe('Command Validation', () => {
     expect(board.isValidCommand(command)).toBe(true);
   });
 
-  // Black to move tests
   test('valid move command for black recognized', () => {
     const board = Board.fromFEN('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1');
     const command: Command = {

@@ -2,12 +2,20 @@ import { Color, PieceType, SquareType } from './types';
 import type { File, Piece, Move, Square, CastlingRights, GameState} from './types';
 import { SquareUtils } from './square_utils';
 import { MoveGenerator } from './move_generator';
-import { type Command } from './commands/types';
+import { type Command, Action } from './commands/types';
 import type { BoardStateReader } from './board_state';
 import { CommandValidator } from './commands/command_validator';
 import { FENParser } from './fen_parser';
 import { CastlingHandler } from './castling_handler';
 import { AttackDetector } from './attack_detector';
+import { UnsupportedActionError } from './commands/errors';
+
+export interface ExecuteCommandResult {
+  success: boolean;
+  resigned?: boolean;
+  promotionRequired?: boolean;
+  error?: Error;
+}
 
 export class Board implements BoardStateReader {
   private squares: (Piece | null)[];
@@ -21,6 +29,9 @@ export class Board implements BoardStateReader {
   private kingPositions: Map<Color, number>;
   private validMovesCache: Map<number, Move[]>;
   private isCacheDirty: boolean;
+
+  // Game state flags
+  private resigned: boolean = false;
 
   // Lazy-initialized helpers
   private _commandValidator?: CommandValidator;
@@ -147,10 +158,71 @@ export class Board implements BoardStateReader {
     };
   }
 
-  //TODO: Change API to have a single executeCommand method that internally validates, and executes all corresponding moves if valid. 
-  // Update tests to check that executeCommand was successful instead of checking isValidCommand
+  /**
+   * Executes a voice command on the board.
+   * Handles special cases (resign, promote) directly, and delegates
+   * move/capture/castle commands to the command validator.
+   * 
+   * @returns true if the command was successfully executed, false otherwise
+   */
+  public executeCommand(command: Command): boolean {
+    if (!command.action) {
+      return false;
+    }
+
+    // Handle resign specially
+    if (command.action === Action.Resign) {
+      this.resigned = true;
+      return true;
+    }
+
+    // Handle promote specially - for now, just return false as it needs more context
+    // In a full implementation, this would handle pawn promotion
+    if (command.action === Action.Promote) {
+      // Promotion requires additional context (which piece to promote to)
+      // This should be handled by the caller with a more specific command
+      return false;
+    }
+
+    try {
+      const moves = this.commandValidator.convertToMoves(command);
+      
+      // For castling, we get two moves (king and rook)
+      // But we only execute the king move since executeValidatedMove handles the rook
+      if (command.action === Action.ShortCastle || command.action === Action.LongCastle) {
+        // Execute only the king move - the rook move is handled internally
+        const kingMove = moves[0];
+        const piece = this.getPieceAt(kingMove.startSquare);
+        if (!piece) return false;
+        this.executeValidatedMove(kingMove, piece);
+        return true;
+      }
+
+      // For regular moves, execute the single move
+      if (moves.length === 1) {
+        const move = moves[0];
+        const piece = this.getPieceAt(move.startSquare);
+        if (!piece) return false;
+        this.executeValidatedMove(move, piece);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      // Command validation failed
+      return false;
+    }
+  }
+
+  /**
+   * @deprecated Use executeCommand() instead
+   */
   public isValidCommand(command: Command): boolean {
     return this.commandValidator.isValidCommand(command);
+  }
+
+  public hasResigned(): boolean {
+    return this.resigned;
   }
 
   public executeMove(move: Move): boolean {
@@ -170,7 +242,6 @@ export class Board implements BoardStateReader {
     return true;
   }
 
-  // TODO: Move this functionality elsewhere
   public getValidMovesForSquare(square: Square): Move[] {
     const index = SquareUtils.toIndex(square);
 
@@ -216,7 +287,11 @@ export class Board implements BoardStateReader {
       this.activeColor === Color.White ? Color.Black : Color.White);
   }
 
-  public isGameOver(): { isOver: boolean; reason?: 'checkmate' | 'stalemate' | 'draw' } {
+  public isGameOver(): { isOver: boolean; reason?: 'checkmate' | 'stalemate' | 'draw' | 'resignation' } {
+    if (this.resigned) {
+      return { isOver: true, reason: 'resignation' };
+    }
+
     const validMoves = this.getAllValidMoves();
     if (validMoves.length === 0) {
       return this.isInCheck()
@@ -243,6 +318,7 @@ export class Board implements BoardStateReader {
     newBoard.enPassantSquare = this.enPassantSquare;
     newBoard.halfMoveClock = this.halfMoveClock;
     newBoard.fullMoveNumber = this.fullMoveNumber;
+    newBoard.resigned = this.resigned;
 
     newBoard.piecePositions = new Map([
       [Color.White, newBoard.createPieceTypeMap()],
@@ -420,7 +496,6 @@ export class Board implements BoardStateReader {
     const whitePieces = this.piecePositions.get(Color.White)!;
     const blackPieces = this.piecePositions.get(Color.Black)!;
 
-    // If more than two piece types available, king has more than one supporting piece so sufficient material is present
     const supportingWhitePieces = [...whitePieces].filter(([pieceType, indices]) => indices.size > 0 && pieceType != PieceType.King)
     if (supportingWhitePieces.length > 1) {
       return false;
@@ -434,22 +509,18 @@ export class Board implements BoardStateReader {
     const onlyWhiteKing = supportingWhitePieces.length == 0;
     const onlyBlackKing = supportingBlackPieces.length == 0;
 
-    // King vs king is an insufficient material scenario
     if (onlyWhiteKing && onlyBlackKing) {
       return true;
     }
 
-    // Only one side has an unsupported king, need to check K+B vs K, K+N vs K, 
     if (onlyWhiteKing || onlyBlackKing) {
         const checkPieces = onlyWhiteKing ? supportingBlackPieces : supportingWhitePieces;
         
-        // Only one piece type should be available, check whether it is a bishop or king
         if (checkPieces[0][0] === PieceType.Bishop || PieceType.Knight){
           return true;
         }
     }
     
-    // If both sides have one bishop that occupy the same square type, there is insufficient material
     if (supportingWhitePieces[0][0] === PieceType.Bishop && supportingBlackPieces[0][0] === PieceType.Bishop) {
       const whiteBishopSquare = SquareUtils.fromIndex(supportingWhitePieces[0][1].values().next().value!)
       const blackBishopSquare = SquareUtils.fromIndex(supportingBlackPieces[0][1].values().next().value!)
