@@ -33,6 +33,8 @@ Example commands:
 - "resign" -> resign game
 - "i resign" -> resign game
 
+Inspired by this video of Daniel Naroditsky (RIP) playing Anna Cramling: https://www.youtube.com/watch?v=rmLDo3SKUo8
+
 ## Setup
 
 
