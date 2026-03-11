@@ -1,49 +1,47 @@
-import { useEffect, useRef, useState } from 'react';
-import ChessgroundApi from 'chessground/index';
+import { useEffect, useRef} from 'react';
+import { Chessground } from 'chessground';
 
 import type { Api } from 'chessground/api';
 import type { Config } from 'chessground/config';
 
 interface Props {
-  width?: number
-  height?: number
+  width?: number;
+  height?: number;
   contained?: boolean;
-  config?: Config
+  config?: Config;
+  onReady?: (api: Api) => void;
 }
 
 const Chessboard = ({
-  width = 900, height = 900, config = {}, contained = false,
+  width = 900,
+  height = 900,
+  config = {},
+  contained = false,
+  onReady,
 }: Props) => {
-  const [api, setApi] = useState<Api | null>(null);
-  config.events = {
-    move: (orig, dest, capturedPiece) => {
-      console.log(`Move from ${orig} to ${dest}, captured ${capturedPiece?.role}`);
-    }
-  };
-
-  const ref = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<Api | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (ref && ref.current && !api) {
-      const chessgroundApi = ChessgroundApi(ref.current, {
+    if (containerRef.current && !apiRef.current) {
+      apiRef.current = Chessground(containerRef.current, {
         animation: { enabled: true, duration: 200 },
         ...config,
       });
-      setApi(chessgroundApi);
-    } else if (ref && ref.current && api) {
-      api.set(config);
+      onReady?.(apiRef.current);
     }
-  }, [ref]);
-
-  useEffect(() => {
-    api?.set(config);
-  }, [api, config]);
+    return () => {
+      apiRef.current?.destroy();
+      apiRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div style={{ height: contained ? '100%' : height, width: contained ? '100%' : width }}>
-      <div ref={ref} style={{ height: '100%', width: '100%', display: 'table' }} />
+      <div ref={containerRef} style={{ height: '100%', width: '100%', display: 'table' }} />
     </div>
   );
-}
+};
 
 export default Chessboard;

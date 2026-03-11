@@ -6,7 +6,6 @@ import {
 } from './types';
 
 import {
-  Color,
   type File,
   type Rank,
   type Square,
