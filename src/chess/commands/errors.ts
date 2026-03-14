@@ -58,3 +58,43 @@ export class IllegalCastlingError extends CommandValidationError {
     this.name = 'IllegalCastlingError';
   }
 }
+
+/**
+ * Thrown when trying to move from an empty square.
+ */
+export class EmptySquareError extends CommandValidationError {
+  constructor(square: string) {
+    super(`No piece found on square ${square}`);
+    this.name = 'EmptySquareError';
+  }
+}
+
+/**
+ * Thrown when a move would leave the king in check.
+ */
+export class MoveLeavesKingInCheckError extends CommandValidationError {
+  constructor() {
+    super('This move would leave your king in check');
+    this.name = 'MoveLeavesKingInCheckError';
+  }
+}
+
+/**
+ * Thrown when an invalid piece movement pattern is attempted.
+ */
+export class InvalidPieceMovementError extends CommandValidationError {
+  constructor(pieceType: string) {
+    super(`Invalid movement pattern for ${pieceType}`);
+    this.name = 'InvalidPieceMovementError';
+  }
+}
+
+/**
+ * Thrown when a capture command targets an empty square (except en passant).
+ */
+export class NoCaptureTargetError extends CommandValidationError {
+  constructor() {
+    super('Capture command requires an enemy piece on the target square');
+    this.name = 'NoCaptureTargetError';
+  }
+}
