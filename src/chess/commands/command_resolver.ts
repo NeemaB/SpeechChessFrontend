@@ -1,4 +1,4 @@
-import { Chess, type Move, type PieceSymbol } from 'chess.js';
+import { Chess, type Move, type PieceSymbol, type Square as ChessJsSquare } from 'chess.js';
 import { type Command, type CommandInfo, Action } from './types';
 import { PieceType, type Square, type File } from '../types';
 import {
@@ -43,9 +43,12 @@ export class CommandResolver {
   }
 
   private static resolveCastling(chess: Chess, kingside: boolean): Move {
-    // chess.js flags: 'k' = O-O, 'q' = O-O-O
+    // Only the king can castle — ask chess.js for king moves exclusively
+    // rather than scanning the full legal-move list.
     const flag = kingside ? 'k' : 'q';
-    const move = chess.moves({ verbose: true }).find((m) => m.flags.includes(flag));
+    const move = chess
+      .moves({ verbose: true, piece: 'k' })
+      .find((m) => m.flags.includes(flag));
     if (!move) {
       throw new IllegalCastlingError(kingside ? 'kingside' : 'queenside');
     }
@@ -53,7 +56,7 @@ export class CommandResolver {
   }
 
   private static resolveMoveOrCapture(chess: Chess, command: Command): Move {
-    const legal = chess.moves({ verbose: true });
+    const legal = this.queryLegalMoves(chess, command.startInfo);
     const requireCapture = command.action === Action.Capture;
 
     const candidates = legal.filter((m) => {
@@ -79,6 +82,25 @@ export class CommandResolver {
     }
 
     return candidates[0];
+  }
+
+  /**
+   * Ask chess.js for legal moves, narrowing the result set via the engine's
+   * own `square` / `piece` filter options whenever the command's start info
+   * makes that possible. The downstream filter pass still runs for
+   * correctness, but over a much smaller array.
+   */
+  private static queryLegalMoves(chess: Chess, startInfo?: CommandInfo): Move[] {
+    if (startInfo !== undefined) {
+      if (this.isSquare(startInfo)) {
+        return chess.moves({ verbose: true, square: startInfo as ChessJsSquare });
+      }
+      if (this.isPieceType(startInfo)) {
+        return chess.moves({ verbose: true, piece: PIECE_TYPE_TO_SYMBOL[startInfo] });
+      }
+      // File disambiguators have no equivalent chess.js filter — fall through.
+    }
+    return chess.moves({ verbose: true });
   }
 
   private static matchesStart(move: Move, info?: CommandInfo): boolean {
