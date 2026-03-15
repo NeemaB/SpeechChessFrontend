@@ -10,6 +10,8 @@ import {
   NoValidMoveError,
   AmbiguousMoveError,
   IllegalCastlingError,
+  EmptySquareError,
+  NoCaptureTargetError,
 } from './errors';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -37,14 +39,33 @@ function makeMove(overrides: Partial<Move> = {}): Move {
 }
 
 /**
- * Build a `Chess` test double whose `moves()` method is a vitest spy
- * returning the supplied list. The spy is exposed so tests can assert on
- * the filter options the resolver passes to chess.js.
+ * Build a `Chess` test double whose `moves()`, `get()` and `turn()`
+ * methods are vitest spies. Board occupancy and side-to-move can be
+ * controlled via the optional config object.
+ *
+ * @param legalMoves  - Array returned by `chess.moves()`.
+ * @param config.boardState - Maps square names to pieces; unlisted
+ *     squares are treated as empty (get → undefined).
+ * @param config.turn - Value returned by `chess.turn()` ('w' | 'b').
  */
-function mockChess(legalMoves: Move[]) {
+function mockChess(
+  legalMoves: Move[],
+  config: {
+    boardState?: Record<string, { type: string; color: string }>;
+    turn?: string;
+  } = {},
+) {
   const movesSpy = vi.fn().mockReturnValue(legalMoves);
-  const instance = { moves: movesSpy } as unknown as Chess;
-  return { instance, movesSpy };
+  const getSpy = vi.fn().mockImplementation(
+    (sq: string) => config.boardState?.[sq] ?? undefined,
+  );
+  const turnFn = vi.fn().mockReturnValue(config.turn ?? 'w');
+  const instance = {
+    moves: movesSpy,
+    get: getSpy,
+    turn: turnFn,
+  } as unknown as Chess;
+  return { instance, movesSpy, getSpy };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -122,11 +143,12 @@ describe('CommandResolver — NoValidMoveError', () => {
     expect(() => CommandResolver.resolve(instance, cmd)).toThrow(NoValidMoveError);
   });
 
-  it('throws when a capture is requested but the only matching move is quiet', () => {
-    const { instance } = mockChess([
-      makeMove({ from: 'e2', to: 'e4', flags: 'n' }), // quiet push, not a capture
-    ]);
-    const cmd: Command = { action: Action.Capture, endInfo: 'e4' };
+  it('throws when an enemy piece exists on the target but no legal capture reaches it', () => {
+    const { instance } = mockChess([], {
+      boardState: { e5: { type: 'p', color: 'b' } },
+      turn: 'w',
+    });
+    const cmd: Command = { action: Action.Capture, endInfo: 'e5' };
 
     expect(() => CommandResolver.resolve(instance, cmd)).toThrow(NoValidMoveError);
   });
@@ -135,6 +157,73 @@ describe('CommandResolver — NoValidMoveError', () => {
     const { instance } = mockChess([]); // engine says the queen is stuck
     const cmd: Command = { action: Action.Move, startInfo: PieceType.Queen, endInfo: 'd4' };
 
+    expect(() => CommandResolver.resolve(instance, cmd)).toThrow(NoValidMoveError);
+  });
+
+  it('throws when a capture targets a piece type not among any captured pieces', () => {
+    const { instance } = mockChess([
+      makeMove({ from: 'e2', to: 'e4', flags: 'n' }),
+    ]);
+    const cmd: Command = { action: Action.Capture, endInfo: PieceType.Queen };
+
+    expect(() => CommandResolver.resolve(instance, cmd)).toThrow(NoValidMoveError);
+  });
+});
+
+describe('CommandResolver — EmptySquareError', () => {
+  it('throws when the specified source square has no piece on it', () => {
+    const { instance } = mockChess([], {
+      boardState: {},
+    });
+    const cmd: Command = { action: Action.Move, startInfo: 'e4', endInfo: 'e5' };
+
+    expect(() => CommandResolver.resolve(instance, cmd)).toThrow(EmptySquareError);
+  });
+
+  it('includes the square identifier in the error message', () => {
+    const { instance } = mockChess([]);
+    const cmd: Command = { action: Action.Move, startInfo: 'a1', endInfo: 'a3' };
+
+    expect(() => CommandResolver.resolve(instance, cmd)).toThrow(/a1/);
+  });
+
+  it('takes priority over NoCaptureTargetError when source square is empty', () => {
+    const { instance } = mockChess([]);
+    const cmd: Command = { action: Action.Capture, startInfo: 'e4', endInfo: 'e5' };
+
+    expect(() => CommandResolver.resolve(instance, cmd)).toThrow(EmptySquareError);
+  });
+});
+
+describe('CommandResolver — NoCaptureTargetError', () => {
+  it('throws when a capture is requested on an empty square', () => {
+    const { instance } = mockChess(
+      [makeMove({ from: 'e2', to: 'e4', flags: 'n' })],
+      { boardState: {} },
+    );
+    const cmd: Command = { action: Action.Capture, endInfo: 'e4' };
+
+    expect(() => CommandResolver.resolve(instance, cmd)).toThrow(NoCaptureTargetError);
+  });
+
+  it('throws when a capture targets a square occupied by a friendly piece', () => {
+    const { instance } = mockChess([], {
+      boardState: { d4: { type: 'n', color: 'w' } },
+      turn: 'w',
+    });
+    const cmd: Command = { action: Action.Capture, endInfo: 'd4' };
+
+    expect(() => CommandResolver.resolve(instance, cmd)).toThrow(NoCaptureTargetError);
+  });
+
+  it('is NOT thrown when an enemy piece exists but the capture is otherwise illegal', () => {
+    const { instance } = mockChess([], {
+      boardState: { e5: { type: 'r', color: 'b' } },
+      turn: 'w',
+    });
+    const cmd: Command = { action: Action.Capture, endInfo: 'e5' };
+
+    expect(() => CommandResolver.resolve(instance, cmd)).not.toThrow(NoCaptureTargetError);
     expect(() => CommandResolver.resolve(instance, cmd)).toThrow(NoValidMoveError);
   });
 });

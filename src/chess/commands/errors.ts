@@ -70,26 +70,6 @@ export class EmptySquareError extends CommandValidationError {
 }
 
 /**
- * Thrown when a move would leave the king in check.
- */
-export class MoveLeavesKingInCheckError extends CommandValidationError {
-  constructor() {
-    super('This move would leave your king in check');
-    this.name = 'MoveLeavesKingInCheckError';
-  }
-}
-
-/**
- * Thrown when an invalid piece movement pattern is attempted.
- */
-export class InvalidPieceMovementError extends CommandValidationError {
-  constructor(pieceType: string) {
-    super(`Invalid movement pattern for ${pieceType}`);
-    this.name = 'InvalidPieceMovementError';
-  }
-}
-
-/**
  * Thrown when a capture command targets an empty square (except en passant).
  */
 export class NoCaptureTargetError extends CommandValidationError {

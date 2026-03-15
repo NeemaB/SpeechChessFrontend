@@ -7,6 +7,8 @@ import {
   NoValidMoveError,
   AmbiguousMoveError,
   IllegalCastlingError,
+  EmptySquareError,
+  NoCaptureTargetError,
 } from './errors';
 
 const PIECE_TYPE_TO_SYMBOL: Record<PieceType, PieceSymbol> = {
@@ -67,7 +69,7 @@ export class CommandResolver {
     });
 
     if (candidates.length === 0) {
-      throw new NoValidMoveError();
+      this.throwDiagnosticError(chess, command, requireCapture);
     }
 
     if (candidates.length > 1) {
@@ -82,6 +84,33 @@ export class CommandResolver {
     }
 
     return candidates[0];
+  }
+
+  /**
+   * When no legal-move candidates survive filtering, inspect the board
+   * via chess.js to produce the most actionable error rather than a
+   * generic "no valid move". Falls back to NoValidMoveError when no
+   * more specific diagnosis applies.
+   */
+  private static throwDiagnosticError(
+    chess: Chess,
+    command: Command,
+    requireCapture: boolean,
+  ): never {
+    if (command.startInfo !== undefined && this.isSquare(command.startInfo)) {
+      if (!chess.get(command.startInfo as ChessJsSquare)) {
+        throw new EmptySquareError(command.startInfo);
+      }
+    }
+
+    if (requireCapture && command.endInfo !== undefined && this.isSquare(command.endInfo)) {
+      const target = chess.get(command.endInfo as ChessJsSquare);
+      if (!target || target.color === chess.turn()) {
+        throw new NoCaptureTargetError();
+      }
+    }
+
+    throw new NoValidMoveError();
   }
 
   /**
