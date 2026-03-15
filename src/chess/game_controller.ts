@@ -10,6 +10,7 @@ export interface CommandResult {
   move?: Move;
   resigned?: boolean;
   error?: string;
+  errorStage?: 'parse' | 'resolution';
 }
 
 /**
@@ -54,7 +55,11 @@ export class GameController {
     try {
       command = CommandParser.parseCommand(input);
     } catch (err) {
-      return { success: false, error: `Could not parse: ${(err as Error).message}` };
+      return {
+        success: false,
+        error: `Could not parse: ${(err as Error).message}`,
+        errorStage: 'parse',
+      };
     }
 
     if (command.action === Action.Resign) {
@@ -79,7 +84,11 @@ export class GameController {
       this.syncBoard(executed);
       return { success: true, move: executed };
     } catch (err) {
-      return { success: false, error: (err as Error).message };
+      return {
+        success: false,
+        error: (err as Error).message,
+        errorStage: 'resolution',
+      };
     }
   }
 

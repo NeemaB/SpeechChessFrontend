@@ -13,8 +13,8 @@ interface Props {
 }
 
 const Chessboard = ({
-  width = 900,
-  height = 900,
+  width = 600,
+  height = 600,
   config = {},
   contained = false,
   onReady,

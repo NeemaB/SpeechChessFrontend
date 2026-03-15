@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Chess, Move } from 'chess.js';
 
-import { CommandResolver } from './command_resolver';
-import { Action, type Command } from './types';
-import { PieceType } from '../types';
+import { CommandResolver } from '../../../src/chess/commands/command_resolver';
+import { Action, type Command } from '../../../src/chess/commands/types';
+import { PieceType } from '../../../src/chess/types';
 import {
   MissingActionError,
   UnsupportedActionError,
@@ -12,7 +12,7 @@ import {
   IllegalCastlingError,
   EmptySquareError,
   NoCaptureTargetError,
-} from './errors';
+} from '../../../src/chess/commands/errors';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Test doubles
