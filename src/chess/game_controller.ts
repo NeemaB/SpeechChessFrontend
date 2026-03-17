@@ -4,6 +4,7 @@ import type { Key } from 'chessground/types';
 import { CommandParser } from './commands/command_parser';
 import { CommandResolver } from './commands/command_resolver';
 import { Action } from './commands/types';
+import { StockfishService, type StockfishConfig } from './stockfish_service';
 
 export interface CommandResult {
   success: boolean;
@@ -24,9 +25,14 @@ export class GameController {
   private readonly chess: Chess;
   private boardApi: Api | null = null;
   private resigned = false;
+  private playerColor: 'white' | 'black' = 'white';
+  private readonly stockfish: StockfishService;
+  private thinking = false;
 
-  constructor(fen?: string) {
+  constructor(fen?: string, playerColor?: 'white' | 'black', stockfishConfig?: StockfishConfig) {
     this.chess = new Chess(fen);
+    this.playerColor = playerColor ?? 'white';
+    this.stockfish = new StockfishService(stockfishConfig);
   }
 
   /**
@@ -36,8 +42,10 @@ export class GameController {
   public attachBoard(api: Api): void {
     this.boardApi = api;
     api.set({
+      orientation: this.playerColor,
       movable: {
         free: false,
+        color: this.playerColor,
         events: {
           after: (from, to) => this.handleBoardMove(from, to),
         },
@@ -47,10 +55,66 @@ export class GameController {
   }
 
   /**
+   * Change the player's color. Only allowed when the game hasn't started
+   * (i.e. still on the initial position). Resets the board and re-syncs.
+   */
+  public setPlayerColor(color: 'white' | 'black'): void {
+    if (this.stockfish.isReady()) return; // game already started
+    if (this.chess.history().length > 0) return;
+
+    this.playerColor = color;
+    this.resigned = false;
+    this.chess.reset();
+    this.boardApi?.set({ orientation: this.playerColor });
+    this.syncBoard();
+  }
+
+  public getPlayerColor(): 'white' | 'black' {
+    return this.playerColor;
+  }
+
+  /**
+   * Initialise Stockfish and begin the game.
+   * If the bot moves first (player is black), triggers the bot's opening move.
+   */
+  public async startGame(): Promise<void> {
+    if (this.stockfish.isReady()) return;
+
+    await this.stockfish.init();
+
+    if (this.getTurn() !== this.playerColor && !this.isGameOver()) {
+      await this.doBotMove();
+    }
+  }
+
+  public isGameStarted(): boolean {
+    return this.stockfish.isReady();
+  }
+
+  public async setDifficulty(level: 'easy' | 'medium' | 'hard'): Promise<void> {
+    const presets: Record<string, { skill: number; depth: number }> = {
+      easy: { skill: 1, depth: 3 },
+      medium: { skill: 10, depth: 10 },
+      hard: { skill: 20, depth: 18 },
+    };
+    const { skill, depth } = presets[level];
+    await this.stockfish.setSkillLevel(skill, depth);
+  }
+
+  /**
    * Parse a raw voice/text command and execute it on the board.
    * This is the primary entry point for speech-driven play.
    */
   public handleCommand(input: string): CommandResult {
+    if (!this.stockfish.isReady()) {
+      return { success: false, error: 'Game has not started yet.' };
+    }
+
+    // Ignore voice commands when it's the bot's turn
+    if (this.getTurn() !== this.playerColor) {
+      return { success: false, error: 'It is not your turn.' };
+    }
+
     let command;
     try {
       command = CommandParser.parseCommand(input);
@@ -82,6 +146,7 @@ export class GameController {
         promotion: resolved.promotion,
       });
       this.syncBoard(executed);
+      void this.triggerBotMoveIfNeeded();
       return { success: true, move: executed };
     } catch (err) {
       return {
@@ -100,6 +165,7 @@ export class GameController {
     try {
       const executed = this.chess.move({ from, to, promotion: 'q' });
       this.syncBoard(executed);
+      void this.triggerBotMoveIfNeeded();
       return true;
     } catch {
       this.syncBoard(); // revert illegal drag
@@ -117,6 +183,38 @@ export class GameController {
 
   public isGameOver(): boolean {
     return this.resigned || this.chess.isGameOver();
+  }
+
+  public destroy(): void {
+    this.stockfish.destroy();
+  }
+
+  private async triggerBotMoveIfNeeded(): Promise<void> {
+    if (this.isGameOver()) return;
+    if (this.getTurn() === this.playerColor) return;
+    if (!this.stockfish.isReady()) return;
+    await this.doBotMove();
+  }
+
+  private async doBotMove(): Promise<void> {
+    if (this.thinking) return;
+    this.thinking = true;
+
+    try {
+      const bestMoveUci = await this.stockfish.getBestMove(this.chess.fen());
+      if (!bestMoveUci || bestMoveUci === '(none)') return;
+
+      const from = bestMoveUci.slice(0, 2);
+      const to = bestMoveUci.slice(2, 4);
+      const promotion = bestMoveUci.length > 4 ? bestMoveUci[4] : undefined;
+
+      const executed = this.chess.move({ from, to, promotion });
+      this.syncBoard(executed);
+    } catch (err) {
+      console.error('Stockfish move error:', err);
+    } finally {
+      this.thinking = false;
+    }
   }
 
   /** Build chessground's dests map from chess.js legal moves. */
@@ -140,8 +238,8 @@ export class GameController {
       check: this.chess.inCheck(),
       lastMove: lastMove ? [lastMove.from as Key, lastMove.to as Key] : undefined,
       movable: {
-        color: this.getTurn(),
-        dests: this.getLegalDests(),
+        color: this.playerColor,
+        dests: this.getTurn() === this.playerColor ? this.getLegalDests() : new Map(),
       },
     });
   }

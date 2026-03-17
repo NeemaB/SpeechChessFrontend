@@ -162,3 +162,95 @@
     width: 100%;
   }
 }
+
+.color-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.color-select__label {
+  font-size: 1rem;
+  color: inherit;
+}
+
+.color-select__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4em 1em;
+  border-radius: 999px;
+  border: 1px solid #24324a;
+  background: #f6f3ea;
+  color: #24324a;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.color-select__button:hover:not(:disabled) {
+  background: #e8e4d8;
+  border-color: #4a5e80;
+}
+
+.color-select__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.swap-color__icon {
+  display: block;
+  flex: none;
+}
+
+.pregame-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.difficulty-select {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.difficulty-select__label {
+  font-size: 1rem;
+}
+
+.difficulty-select__input {
+  padding: 0.4em 0.8em;
+  border: 1px solid #24324a;
+  border-radius: 8px;
+  background: #f6f3ea;
+  color: #24324a;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.start-game-button {
+  padding: 0.6em 2em;
+  border-radius: 999px;
+  border: 1px solid #24324a;
+  background: #24324a;
+  color: #f6f3ea;
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 180ms ease, transform 180ms ease;
+}
+
+.start-game-button:hover:not(:disabled) {
+  background: #3a4f70;
+  transform: translateY(-1px);
+}
+
+.start-game-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
